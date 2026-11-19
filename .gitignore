@@ -12,9 +12,11 @@ dist
 dist-ssr
 *.local
 
-# Local song files: audio and lyrics stay out of git
+# Local song files: audio and lyrics stay out of git.
+# The semantics fixture has no lyric text, so it is committed.
 public/song/*
 !public/song/.gitkeep
+!public/song/song.semantics.json
 
 # Editor directories and files
 .vscode/*

@@ -1,4 +1,4 @@
-/** Every step-2 knob in one place: analysis, beat detection, scene. */
+/** Every knob in one place: analysis, beat detection, scene, mapping. */
 
 export const ANALYSIS = {
   fftSize: 2048,
@@ -33,9 +33,13 @@ export const BEAT = {
 } as const
 
 export const SCENE = {
-  /** Must match the page background (#080a12). */
+  /** Neutral background; must match the page background (#080a12). */
   backgroundRgb: '8, 10, 18',
+  /** Baseline count (the step 2 look); energy scales it up to maxParticles. */
   particleCount: 140,
+  maxParticles: 240,
+  /** How strongly a mood's lift (-1..1) tilts particle drift vertically. */
+  liftBias: 0.035,
   /** Trail fade rate per second; higher = shorter trails. */
   trailFade: 3.5,
   /** Particle drift, as a fraction of the window per second. */
@@ -64,4 +68,34 @@ export const SCENE = {
   /** Beat accent ring: how far it spreads and how bright it starts. */
   ringSpread: 0.9,
   ringAlpha: 0.3,
+} as const
+
+/**
+ * Motion character per motif, applied on top of the step 2 baselines.
+ * speed/wander/twinkle/width are multipliers; biasY is window-fractions
+ * per second (negative rises); streak > 0 draws particles as trails of
+ * that many pixels.
+ */
+export const MOTIFS = {
+  drift: { speed: 1, wander: 1, biasY: 0, twinkle: 1, streak: 0, width: 1 },
+  embers: { speed: 0.9, wander: 0.8, biasY: -0.06, twinkle: 1.8, streak: 0, width: 1 },
+  rain: { speed: 0.5, wander: 0.15, biasY: 0.3, twinkle: 0.4, streak: 10, width: 0.6 },
+  stars: { speed: 0.15, wander: 0.5, biasY: 0, twinkle: 2.2, streak: 0, width: 1 },
+} as const
+
+export type Motif = keyof typeof MOTIFS
+
+export const MAPPING = {
+  /** SceneParams reach ~95% of a section change in 3x this, in seconds. */
+  easeTau: 0.5,
+  /** Energy 0 -> AtZero, energy 1 -> AtFull (multiplied into the baselines). */
+  countAtZero: 0.5,
+  countAtFull: 1.6,
+  speedAtZero: 0.6,
+  speedAtFull: 1.4,
+  glowAtZero: 0.7,
+  glowAtFull: 1.3,
+  /** Same idea for line emphasis -> how hard beat accents land. */
+  accentAtZero: 0.4,
+  accentAtFull: 1.6,
 } as const
