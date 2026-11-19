@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { advance, newBody, ZERO_FORCES, type SpringConfig } from './springs'
-import { BEHAVIOR } from './tuning'
+import { HOLD_T } from './tuning'
 
 const HOME = { x: 0.5, y: 0.5, rot: 0, scale: 1 }
 
 const springs: Record<string, SpringConfig> = Object.fromEntries(
-  (['slam', 'drop', 'float', 'tremble', 'swing'] as const).map((name) => [
+  (['jolt', 'rest', 'bob', 'tremble', 'pendulum'] as const).map((name) => [
     name,
     {
-      k: BEHAVIOR[name].k,
-      c: BEHAVIOR[name].c,
-      kRot: BEHAVIOR[name].kRot,
-      cRot: BEHAVIOR[name].cRot,
+      k: HOLD_T[name].k,
+      c: HOLD_T[name].c,
+      kRot: HOLD_T[name].kRot,
+      cRot: HOLD_T[name].cRot,
       kScale: 90,
       cScale: 12,
     },
@@ -54,7 +54,7 @@ describe('spring core', () => {
     const run = (frameDt: number, frames: number) => {
       const body = newBody(0.1, 0.8)
       for (let i = 0; i < frames; i++) {
-        advance(body, HOME, springs.slam, ZERO_FORCES, frameDt)
+        advance(body, HOME, springs.jolt, ZERO_FORCES, frameDt)
       }
       return body
     }
@@ -70,7 +70,7 @@ describe('spring core', () => {
     const floor = { y: 0.5, restitution: 0.45 }
     let maxY = 0
     for (let i = 0; i < 60 * 5; i++) {
-      advance(body, HOME, springs.drop, { ...ZERO_FORCES, ay: BEHAVIOR.drop.gravity }, 1 / 60, floor)
+      advance(body, HOME, springs.rest, { ...ZERO_FORCES, ay: HOLD_T.rest.gravity }, 1 / 60, floor)
       maxY = Math.max(maxY, body.y)
     }
     expect(maxY).toBeLessThanOrEqual(floor.y + 1e-9)

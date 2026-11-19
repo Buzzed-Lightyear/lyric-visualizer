@@ -15,12 +15,16 @@ const GROUPS: Record<string, Record<string, unknown>> = {
   text: TUNING.TEXT,
   legibility: TUNING.LEGIBILITY,
   butterchurn: TUNING.BUTTERCHURN,
-  'behavior: slam': TUNING.BEHAVIOR.slam,
-  'behavior: drop': TUNING.BEHAVIOR.drop,
-  'behavior: float': TUNING.BEHAVIOR.float,
-  'behavior: tremble': TUNING.BEHAVIOR.tremble,
-  'behavior: swing': TUNING.BEHAVIOR.swing,
-  'behavior: shatter': TUNING.BEHAVIOR.shatter,
+  assist: TUNING.ASSIST,
+  ...Object.fromEntries(
+    Object.entries(TUNING.ENTRANCE_T).map(([name, group]) => [`entrance: ${name}`, group]),
+  ),
+  ...Object.fromEntries(
+    Object.entries(TUNING.HOLD_T).map(([name, group]) => [`hold: ${name}`, group]),
+  ),
+  ...Object.fromEntries(
+    Object.entries(TUNING.EXIT_T).map(([name, group]) => [`exit: ${name}`, group]),
+  ),
   'scene / drift': TUNING.SCENE,
   trail: TUNING.TRAIL,
   background: TUNING.BG,

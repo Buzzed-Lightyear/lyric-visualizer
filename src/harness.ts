@@ -12,8 +12,9 @@ import '@fontsource/inter/300.css'
 import butterchurnModule from 'butterchurn'
 import type { AudioFrame } from './audioMath'
 import { unwrapButterchurn } from './background'
-import { BEHAVIOR_NAMES, type BehaviorName } from './behaviors'
+import { LAYOUT_NAMES } from './layout'
 import { chooseMotif, NEUTRAL_PARAMS, paramsForSection, type SceneParams, type TextParams } from './mapping'
+import { ENTRANCE_NAMES, EXIT_NAMES, HOLD_NAMES } from './parts'
 import { PRESET_NAMES, PRESETS } from './presetMap'
 import { createRandom } from './random'
 import { Scene } from './scene'
@@ -23,9 +24,10 @@ import {
   type Semantics,
   type SemanticSection,
 } from './semantics'
-import { TextLayer } from './textLayer'
+import { fontGate, TextLayer, type PartOverrides } from './textLayer'
 import { THRESHOLDS } from './thresholds'
-import { LEGIBILITY, TEXT } from './tuning'
+import { LEGIBILITY } from './tuning'
+import { loadAllFonts, VOICE_NAMES } from './voices'
 
 const W = 1280
 const H = 720
@@ -340,12 +342,13 @@ function neutralToggle(semantics: Semantics): {
 const FAKE_LINE_A = 'FAKE KINETIC WORDS HERE'
 const FAKE_LINE_B = 'SECOND SYNTH LINE'
 
-function fakeTextParams(behavior: BehaviorName, emphasis: number): TextParams {
+function fakeTextParams(emphasis: number): TextParams {
   return {
-    behavior,
-    heavy: true,
-    caps: true,
-    tracking: 0.04,
+    voice: 'block',
+    entrance: 'slam',
+    hold: 'still',
+    exit: 'blow',
+    layout: 'centered',
     fill: [235, 240, 250],
     accent: [255, 180, 90],
     tint: [60, 80, 140],
@@ -353,18 +356,12 @@ function fakeTextParams(behavior: BehaviorName, emphasis: number): TextParams {
     sizeScale: 1,
     scrim: 0.3,
     emphasis,
-    shatterExit: emphasis >= TEXT.shatterEmphasis,
   }
 }
 
 interface TextStrip {
   name: string
   frames: HTMLCanvasElement[]
-}
-
-interface TextScenarioResult {
-  strip: TextStrip
-  checks: Check[]
 }
 
 /** Snapshot the (transparent) text canvas composited over black. */
@@ -379,57 +376,79 @@ function snapText(canvas: HTMLCanvasElement, w: number, h: number): HTMLCanvasEl
   return copy
 }
 
+interface TextSimResult {
+  frames: HTMLCanvasElement[]
+  worstTilt: number
+  /** px beyond the slot tolerance (0 = inside). */
+  worstOver: number
+  offscreen: number
+  overlap: number
+  lineViolations: number
+}
+
 /**
- * Run one behavior through entrance, settled motion and exit on made-up
- * lines, measuring the hard legibility rules from src/tuning.ts:
- * settled words upright within the tilt limit, near their slot, inside
- * the viewport; slot boxes never overlapping; at most two lines around.
+ * Run two made-up lines through a part combination, measuring the hard
+ * legibility rules by introspection: settled, non-exiting words (and
+ * their letters) upright within the tilt limit, near their slot, on
+ * screen; visible rest boxes never overlapping; at most two lines
+ * around. With render=false nothing is drawn, so the full combination
+ * space can be swept cheaply.
  */
-function textScenario(name: BehaviorName | 'shatter'): TextScenarioResult {
-  const behavior: BehaviorName = name === 'shatter' ? 'slam' : name
-  const emphasis = name === 'shatter' ? 0.9 : 0.6
-  const params = fakeTextParams(behavior, emphasis)
+function runTextSim(
+  overrides: PartOverrides,
+  emphasis: number,
+  render: boolean,
+  captureAt: number[],
+  switchAt = 2.4,
+  total = 3.4,
+): TextSimResult {
   const canvas = document.createElement('canvas')
   const layer = new TextLayer(canvas, createRandom(SEED))
   layer.resize(W, H, 1)
-  const lineA = { index: 0, text: FAKE_LINE_A, start: 0, end: 2.4 }
-  const lineB = { index: 1, text: FAKE_LINE_B, start: 2.4, end: 4.8 }
-
-  const frames: HTMLCanvasElement[] = []
-  const captureAt = [0.22, 1.9, 2.55]
+  const params = fakeTextParams(emphasis)
+  const lineA = { index: 0, text: FAKE_LINE_A, start: 0, end: switchAt }
+  const lineB = { index: 1, text: FAKE_LINE_B, start: switchAt, end: switchAt * 2 }
+  const result: TextSimResult = {
+    frames: [],
+    worstTilt: 0,
+    worstOver: 0,
+    offscreen: 0,
+    overlap: 0,
+    lineViolations: 0,
+  }
+  const settledProbe = switchAt * 0.8
   let nextCapture = 0
-  let worstTilt = 0
-  let worstDist = 0
-  let outOfView = 0
-  let lineCountViolations = 0
-  let overlapViolations = 0
-
-  const steps = Math.round(3.6 / DT)
+  const steps = Math.round(total / DT)
   for (let i = 0; i < steps; i++) {
     const t = i * DT
-    layer.draw(scripted(t, 0.6, true), {
-      params,
-      line: t < 2.4 ? lineA : lineB,
-      time: t,
-      behaviorOverride: behavior,
-    }, DT)
-
-    if (nextCapture < captureAt.length && t >= captureAt[nextCapture]) {
-      frames.push(snapText(canvas, 240, 135))
+    layer.draw(
+      scripted(t, 0.6, true),
+      { params, line: t < switchAt ? lineA : lineB, time: t, overrides },
+      DT,
+      render,
+    )
+    if (render && nextCapture < captureAt.length && t >= captureAt[nextCapture]) {
+      result.frames.push(snapText(canvas, 240, 135))
       nextCapture++
     }
 
     const state = layer.inspect()
-    if (state.lineCount > 2) lineCountViolations++
-    const settled = state.words.filter(
-      (word) => word.entered && t >= word.onset + LEGIBILITY.settleSec + DT,
-    )
-    for (const word of settled) {
-      worstTilt = Math.max(worstTilt, Math.abs(word.rotDeg))
+    if (state.lineCount > 2) result.lineViolations++
+    const visible = state.words.filter((word) => word.entered && !word.exiting)
+    for (const word of visible) {
+      if (t < word.onset + LEGIBILITY.settleSec + DT) continue
+      result.worstTilt = Math.max(
+        result.worstTilt,
+        Math.abs(word.rotDeg),
+        word.letterMaxTiltDeg,
+      )
       const dist = Math.hypot(word.xPx - word.slotXPx, word.yPx - word.slotYPx)
-      const tol = LEGIBILITY.slotTolFrac * word.fontSize + THRESHOLDS.legibilityEpsPx
-      worstDist = Math.max(worstDist, dist - LEGIBILITY.slotTolFrac * word.fontSize)
-      if (dist > tol) worstDist = Math.max(worstDist, dist - tol)
+      const tol = LEGIBILITY.slotTolFrac * word.fontSize
+      result.worstOver = Math.max(
+        result.worstOver,
+        dist - tol,
+        word.letterMaxOffsetPx - tol,
+      )
       const eps = THRESHOLDS.legibilityEpsPx
       if (
         word.xPx - word.wPx / 2 < -eps ||
@@ -437,51 +456,74 @@ function textScenario(name: BehaviorName | 'shatter'): TextScenarioResult {
         word.yPx - word.hPx < -eps ||
         word.yPx + word.hPx > H + eps
       ) {
-        outOfView++
+        result.offscreen++
       }
     }
-    // Slot boxes must not overlap at rest (checked mid-line, settled).
-    if (Math.abs(t - 1.9) < DT) {
-      const words = state.words
-      for (let a = 0; a < words.length; a++) {
-        for (let b = a + 1; b < words.length; b++) {
-          const dx = Math.abs(words[a].slotXPx - words[b].slotXPx)
-          const dy = Math.abs(words[a].slotYPx - words[b].slotYPx)
+    // Visible rest boxes must not overlap (sampled once, settled).
+    if (Math.abs(t - settledProbe) < DT) {
+      for (let a = 0; a < visible.length; a++) {
+        for (let b = a + 1; b < visible.length; b++) {
+          const dx = Math.abs(visible[a].slotXPx - visible[b].slotXPx)
+          const dy = Math.abs(visible[a].slotYPx - visible[b].slotYPx)
           if (
-            dx < ((words[a].wPx + words[b].wPx) / 2) * 0.98 &&
-            dy < ((words[a].hPx + words[b].hPx) / 2) * 0.98
+            dx < ((visible[a].wPx + visible[b].wPx) / 2) * 0.98 &&
+            dy < ((visible[a].hPx + visible[b].hPx) / 2) * 0.98
           ) {
-            overlapViolations++
+            result.overlap++
           }
         }
       }
     }
   }
+  return result
+}
 
-  const checks: Check[] = [
+/** Sweep every entrance x hold x exit combination without drawing. */
+function sweepCombinations(): Check[] {
+  let worstTilt = 0
+  let worstTiltCombo = ''
+  let worstOver = 0
+  let worstOverCombo = ''
+  let offscreen = 0
+  let overlap = 0
+  let lineViolations = 0
+  let combos = 0
+  for (const entrance of ENTRANCE_NAMES) {
+    for (const hold of HOLD_NAMES) {
+      for (const exit of EXIT_NAMES) {
+        combos++
+        const r = runTextSim({ entrance, hold, exit }, 0.6, false, [], 1.6, 2.6)
+        if (r.worstTilt > worstTilt) {
+          worstTilt = r.worstTilt
+          worstTiltCombo = `${entrance}/${hold}/${exit}`
+        }
+        if (r.worstOver > worstOver) {
+          worstOver = r.worstOver
+          worstOverCombo = `${entrance}/${hold}/${exit}`
+        }
+        offscreen += r.offscreen
+        overlap += r.overlap
+        lineViolations += r.lineViolations
+      }
+    }
+  }
+  return [
     {
-      name: `text settles legible: ${name}`,
+      name: `combos settle legible (${combos} entrance x hold x exit)`,
       pass:
         worstTilt <= LEGIBILITY.maxTiltDeg + THRESHOLDS.legibilityEpsDeg &&
-        worstDist <= THRESHOLDS.legibilityEpsPx &&
-        outOfView === 0,
-      value: `tilt ${worstTilt.toFixed(1)}°, slot overshoot ${worstDist.toFixed(1)}px, offscreen ${outOfView}`,
-      threshold: `tilt <= ${LEGIBILITY.maxTiltDeg}°, near slot within ${LEGIBILITY.slotTolFrac}x font, on screen (settle ${LEGIBILITY.settleSec}s)`,
+        worstOver <= THRESHOLDS.legibilityEpsPx &&
+        offscreen === 0,
+      value: `tilt ${worstTilt.toFixed(1)}° (${worstTiltCombo}), overshoot ${worstOver.toFixed(1)}px (${worstOverCombo}), offscreen ${offscreen}`,
+      threshold: `tilt <= ${LEGIBILITY.maxTiltDeg}°, within ${LEGIBILITY.slotTolFrac}x font of the slot, on screen`,
     },
     {
-      name: `text slots don't overlap: ${name}`,
-      pass: overlapViolations === 0,
-      value: String(overlapViolations),
-      threshold: '0 overlapping rest boxes',
-    },
-    {
-      name: `text line count <= 2: ${name}`,
-      pass: lineCountViolations === 0,
-      value: String(lineCountViolations),
-      threshold: 'current + outgoing only',
+      name: 'combos keep rest boxes apart and lines <= 2',
+      pass: overlap === 0 && lineViolations === 0,
+      value: `overlaps ${overlap}, line-count violations ${lineViolations}`,
+      threshold: '0 and 0',
     },
   ]
-  return { strip: { name: `text: ${name} (entrance / settled / exit)`, frames }, checks }
 }
 
 /** Butterchurn smoke: with an oscillator source, frames are not blank. */
@@ -781,20 +823,39 @@ async function run(): Promise<Report> {
     drawMs,
   )
 
-  // Kinetic typography: filmstrip + measured legibility per behavior.
-  // ctx.font alone never triggers CSS font loading; request the faces.
-  await Promise.all([
-    document.fonts.load('400 32px "Archivo Black"'),
-    document.fonts.load('300 32px Inter'),
-  ])
+  // Kinetic typography: ctx.font alone never triggers CSS font loading,
+  // so request every face, then film each part, voice and layout.
+  await loadAllFonts()
   await document.fonts.ready
   const textStrips: TextStrip[] = []
-  for (const behavior of [...BEHAVIOR_NAMES, 'shatter' as const]) {
-    const result = textScenario(behavior)
-    textStrips.push(result.strip)
-    checks.push(...result.checks)
+  const film = (name: string, overrides: PartOverrides, captureAt: number[], emphasis = 0.6) => {
+    const r = runTextSim(overrides, emphasis, true, captureAt)
+    textStrips.push({ name, frames: r.frames })
+    return r
+  }
+  for (const entrance of ENTRANCE_NAMES) {
+    film(`entrance: ${entrance}`, { entrance, hold: 'still', exit: 'blow' }, [0.12, 0.4, 1.9])
+  }
+  for (const hold of HOLD_NAMES) {
+    film(`hold: ${hold}`, { entrance: 'creep', hold, exit: 'blow' }, [1.0, 1.6, 2.2])
+  }
+  for (const exit of EXIT_NAMES) {
+    film(`exit: ${exit}`, { entrance: 'creep', hold: 'still', exit }, [2.45, 2.62, 2.85])
+  }
+  for (const voice of VOICE_NAMES) {
+    film(`voice: ${voice}`, { entrance: 'creep', hold: 'still', exit: 'blow', voice }, [0.4, 1.9, 2.5])
+  }
+  for (const layout of LAYOUT_NAMES) {
+    film(`layout: ${layout}`, { entrance: 'creep', hold: 'still', exit: 'blow', layout }, [0.6, 1.3, 1.9])
   }
 
+  checks.push(...sweepCombinations())
+  checks.push({
+    name: 'no text drawn before fonts were ready',
+    pass: fontGate.violations === 0,
+    value: String(fontGate.violations),
+    threshold: '0 glyphs',
+  })
   checks.push(await butterchurnSmoke())
 
   buildSheet(tiles, strips, textStrips)

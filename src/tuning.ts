@@ -234,10 +234,19 @@ export const TEXT = {
   /** Energy -> force scale. */
   forceBase: 0.5,
   forceEnergy: 1.1,
-  /** Bass shakes everything a little; beats kick via each behavior. */
+  /** Bass shakes everything a little; beats kick via each hold part. */
   bassShake: 0.055,
   bassShakeRate: 23,
   bassScale: 0.1,
+  /** Squash & stretch: one strength knob, area preserved. */
+  squashStretch: 0.6,
+  stretchMax: 0.5,
+  /** Ghost trails at high speed; 0 = off (default). */
+  ghostTrails: 0,
+  ghostMinSpeed: 0.6,
+  /** Focus layout gate: max words/second, min readable time per word. */
+  focusMaxPace: 3,
+  focusMinWordSec: 0.25,
 }
 
 export const PHYSICS = {
@@ -265,31 +274,56 @@ export const BUTTERCHURN = {
   cycleBlend: 0.6,
 }
 
-/** Per-behavior spring constants and forces. */
-export const BEHAVIOR = {
-  slam: {
-    k: 160, c: 18, kRot: 120, cRot: 14, kScale: 90, cScale: 12,
-    enterScale: 2.6, jolt: 0.05, joltRot: 1.4, joltScale: 1.2, exitGravity: 1.8,
-  },
-  drop: {
-    k: 90, c: 10, kRot: 80, cRot: 10,
-    gravity: 3.2, restitution: 0.45, dropHeight: 0.35, hop: 0.12, exitGravity: 2.6,
-  },
-  float: {
-    k: 18, c: 4.5, kRot: 30, cRot: 5,
-    buoyancy: 0.04, bobAmp: 0.1, bobRate: 1.8, beatLift: 0.05, exitRise: 1.4,
-  },
-  tremble: {
-    k: 260, c: 22, kRot: 200, cRot: 18,
-    noise: 0.5, noiseRate: 31,
-  },
-  swing: {
-    k: 140, c: 14, kRot: 26, cRot: 1.4,
-    enterTilt: 0.6, push: 1.6,
-  },
-  shatter: {
-    gravity: 2.4, spreadX: 0.35, spreadY: 0.3, spin: 7, fadeSec: 1.1,
-  },
+/** Entrance parts: how a word arrives. Units are window fractions. */
+export const ENTRANCE_T = {
+  slam: { scale: 2.6, vScale: -2, jitter: 0.05 },
+  fall: { height: 0.35 },
+  buoy: { depth: 0.12, lift: 0.12 },
+  creep: { scale: 0.7, sink: 0.04 },
+  hang: { raise: 0.06, tilt: 0.6 },
+  whip: { distance: 0.55, speed: 2.2 },
+  fling: { dx: 0.35, dy: 0.3, vx: 1.1, vy: 1.5, spin: 4.5 },
+  pop: { stagger: 0.045, vScale: 5, duration: 0.6 },
+  assemble: { scatter: 0.5, maxDelay: 0.1, duration: 0.8 },
+  unfold: { duration: 0.45 },
+}
+
+/** Hold parts: springs and ongoing (audio-driven) motion while active. */
+export const HOLD_T = {
+  jolt: { k: 160, c: 18, kRot: 120, cRot: 14, jolt: 0.05, joltRot: 1.4, joltScale: 1.2 },
+  rest: { k: 90, c: 10, kRot: 80, cRot: 10, gravity: 3.2, restitution: 0.45, hop: 0.12 },
+  bob: { k: 18, c: 4.5, kRot: 30, cRot: 5, buoyancy: 0.04, amp: 0.1, rate: 1.8, beatLift: 0.05 },
+  tremble: { k: 260, c: 22, kRot: 200, cRot: 18, noise: 0.5, rate: 31 },
+  pendulum: { k: 140, c: 14, kRot: 26, cRot: 1.4, push: 1 },
+  pulse: { k: 120, c: 14, kRot: 100, cRot: 12, amp: 0.22 },
+  wave: { k: 150, c: 15, kRot: 120, cRot: 12, amp: 0.035, speed: 9, spacing: 0.9, beatBoost: 1.6, boostDecay: 2.2 },
+  still: { k: 300, c: 26, kRot: 220, cRot: 20 },
+}
+
+/** Exit parts: how a line leaves. */
+export const EXIT_T = {
+  tumble: { gravity: 2, spin: 4, kick: 0.15 },
+  collapse: { gravity: 2.6 },
+  liftOff: { rise: 1.4, drift: 0.08 },
+  blow: { speed: 0.9, stagger: 0.06, wobble: 0.3 },
+  sink: { pull: 0.6, shrink: 1.8 },
+  snap: { timeout: 1.2 },
+  knock: { speed: 0.7, gravity: 1.2 },
+  shatter: { gravity: 2.4, spreadX: 0.35, spreadY: 0.3, spin: 7, fadeSec: 1.1 },
+}
+
+/**
+ * The legibility assist: an extra spring toward the slot that ramps in
+ * before the settle deadline, so weak holds arrive on time without ever
+ * being pinned at the tolerance edge.
+ */
+export const ASSIST = {
+  k: 600,
+  c: 34,
+  kRot: 300,
+  cRot: 40,
+  /** Ramp starts at this fraction of LEGIBILITY.settleSec. */
+  rampStart: 0.35,
 }
 
 export const MAPPING = {

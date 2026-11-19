@@ -53,23 +53,31 @@ export function newBody(x: number, y: number): Body {
 
 export const ZERO_FORCES: Forces = { ax: 0, ay: 0, aRot: 0, aScale: 0 }
 
-/** One substep of length h. */
-function substep(b: Body, home: Home, s: SpringConfig, f: Forces, h: number, floor?: Floor): void {
+/** One substep of length h. Returns the impact speed if the floor was hit. */
+function substep(b: Body, home: Home, s: SpringConfig, f: Forces, h: number, floor?: Floor): number {
+  let impact = 0
   b.vx += (s.k * (home.x - b.x) - s.c * b.vx + f.ax) * h
   b.vy += (s.k * (home.y - b.y) - s.c * b.vy + f.ay) * h
   b.x += b.vx * h
   b.y += b.vy * h
   if (floor && b.y > floor.y) {
     b.y = floor.y
-    if (b.vy > 0) b.vy = -b.vy * floor.restitution
+    if (b.vy > 0) {
+      impact = b.vy
+      b.vy = -b.vy * floor.restitution
+    }
   }
   b.vrot += (s.kRot * (home.rot - b.rot) - s.cRot * b.vrot + f.aRot) * h
   b.rot += b.vrot * h
   b.vscale += (s.kScale * (home.scale - b.scale) - s.cScale * b.vscale + f.aScale) * h
   b.scale += b.vscale * h
+  return impact
 }
 
-/** Advance a body by dt in fixed substeps so large frames stay stable. */
+/**
+ * Advance a body by dt in fixed substeps so large frames stay stable.
+ * Returns the largest floor-impact speed, for squash-on-impact.
+ */
 export function advance(
   b: Body,
   home: Home,
@@ -77,11 +85,13 @@ export function advance(
   f: Forces,
   dt: number,
   floor?: Floor,
-): void {
+): number {
   let remaining = dt
+  let impact = 0
   while (remaining > 1e-9) {
     const h = Math.min(PHYSICS.substep, remaining)
-    substep(b, home, s, f, h, floor)
+    impact = Math.max(impact, substep(b, home, s, f, h, floor))
     remaining -= h
   }
+  return impact
 }

@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { AudioAnalysis } from './analysis'
 import { Background } from './background'
-import { BEHAVIOR_NAMES, type BehaviorName } from './behaviors'
 import { SectionCommitter } from './committer'
 import { drawDebug } from './debug'
 import { createKnobs, type Knobs } from './knobs'
+import { LAYOUT_NAMES } from './layout'
 import { activeLineIndex, parseLrc, type LyricLine } from './lrc'
-import { chooseMotif, paramsForSection, textParamsForSection } from './mapping'
+import { chooseMotif, paramsForSection, textParamsForLine } from './mapping'
+import {
+  COMBO_NAMES,
+  COMBOS,
+  ENTRANCE_NAMES,
+  EXIT_NAMES,
+  HOLD_NAMES,
+} from './parts'
 import { pinPreset } from './presetMap'
 import { createRandom } from './random'
 import { Scene } from './scene'
@@ -18,7 +25,8 @@ import {
   type Semantics,
   type SemanticSection,
 } from './semantics'
-import { TextLayer } from './textLayer'
+import { TextLayer, type PartOverrides } from './textLayer'
+import { loadAllFonts, VOICE_NAMES } from './voices'
 
 // The spike hardcodes one song. The files live in public/song/; only the
 // semantics fixture is committed.
@@ -57,7 +65,7 @@ function App() {
   const debugRef = useRef(false)
   const showLyricsRef = useRef(true)
   const physicsTextRef = useRef(true)
-  const behaviorOverrideRef = useRef<BehaviorName | null>(null)
+  const overridesRef = useRef<PartOverrides>({})
   const backgroundRef = useRef<Background | null>(null)
   const committedRef = useRef<Committed>({ key: 'neutral', energy: 0.5, section: null })
   const knobsRef = useRef<Knobs | null>(null)
@@ -65,10 +73,9 @@ function App() {
   useEffect(() => {
     const knobs = createKnobs()
     knobsRef.current = knobs
-    // Canvas ctx.font never triggers CSS font loading; request the faces
-    // up front so the first laid-out line measures with the real fonts.
-    void document.fonts.load('400 32px "Archivo Black"')
-    void document.fonts.load('300 32px Inter')
+    // Canvas ctx.font never triggers CSS font loading; request every face
+    // up front — the text layer refuses to draw until all are ready.
+    void loadAllFonts()
     return () => {
       knobsRef.current = null
       knobs.dispose()
@@ -150,10 +157,23 @@ function App() {
           pinPreset(mood, background.currentPreset)
         }
       }
-      if (key >= '1' && key <= '5') {
-        behaviorOverrideRef.current = BEHAVIOR_NAMES[Number(key) - 1]
+      const cycle = <T,>(list: readonly T[], current: T | null | undefined): T => {
+        const index = current ? list.indexOf(current) : -1
+        return list[(index + 1) % list.length]
       }
-      if (key === '0') behaviorOverrideRef.current = null
+      const o = overridesRef.current
+      if (key === 'e') o.entrance = cycle(ENTRANCE_NAMES, o.entrance)
+      if (key === 'h') o.hold = cycle(HOLD_NAMES, o.hold)
+      if (key === 'x') o.exit = cycle(EXIT_NAMES, o.exit)
+      if (key === 'f') o.voice = cycle(VOICE_NAMES, o.voice)
+      if (key === 'y') o.layout = cycle(LAYOUT_NAMES, o.layout)
+      if (key >= '1' && key <= '5') {
+        const combo = COMBOS[COMBO_NAMES[Number(key) - 1]]
+        o.entrance = combo.entrance
+        o.hold = combo.hold
+        o.exit = combo.exit
+      }
+      if (key === '0') overridesRef.current = {}
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -237,8 +257,10 @@ function App() {
 
       // Text layer (plus scrim/tint, which it always draws).
       const committedSection = committedRef.current.section
-      const textParams = textParamsForSection(committedSection, emphasis)
       const lyrics = linesRef.current
+      const lineStart = lineIndex >= 0 ? lyrics[lineIndex].time : null
+      const prevLineStart = lineIndex > 0 ? lyrics[lineIndex - 1].time : null
+      const textParams = textParamsForLine(committedSection, emphasis, lineStart, prevLineStart)
       const line =
         physicsTextRef.current && showLyricsRef.current && lineIndex >= 0
           ? {
@@ -250,19 +272,22 @@ function App() {
           : null
       text.draw(
         frame,
-        { params: textParams, line, time: t, behaviorOverride: behaviorOverrideRef.current },
+        { params: textParams, line, time: t, overrides: overridesRef.current },
         dt,
       )
 
       if (debugRef.current) {
         const { motif, tag } = chooseMotif(section?.imagery ?? [])
+        const o = overridesRef.current
+        const eff = (over: string | null | undefined, mapped: string) =>
+          over ? `${over} (forced)` : mapped
         drawDebug(text.context, frame, [
           `sem    ${!semanticsRef.current ? 'none loaded' : semanticsOnRef.current ? 'on' : 'off (neutral)'}`,
           `sect   ${section ? `${section.label} · ${section.mood} · energy ${section.energy.toFixed(2)}` : '(none)'}`,
-          `commit ${committedRef.current.key}`,
-          `motif  ${tag ? `${motif} <- ${tag}` : motif}  ·  emph ${emphasis.toFixed(2)}`,
+          `commit ${committedRef.current.key}  ·  emph ${emphasis.toFixed(2)}  ·  motif ${tag ? `${motif}<-${tag}` : motif}`,
           `bg     ${mode}  ·  ${background.currentPreset}`,
-          `text   ${physicsTextRef.current ? 'physics' : 'dom line'}  ·  ${behaviorOverrideRef.current ?? `${textParams.behavior} (mood)`}`,
+          `text   ${physicsTextRef.current ? 'physics' : 'dom line'}  ·  voice ${eff(o.voice, textParams.voice)}  ·  layout ${eff(o.layout, textParams.layout)}`,
+          `parts  in ${eff(o.entrance, textParams.entrance)}  ·  hold ${eff(o.hold, textParams.hold)}  ·  out ${eff(o.exit, textParams.exit)}`,
         ])
       }
       setActiveIndex(lineIndex)
@@ -322,8 +347,8 @@ function App() {
           </p>
         )}
         <p className="hint">
-          L lyrics · T text mode · B background · [ ] preset · M pin · 1-5/0
-          behavior · D debug · S semantics · K knobs
+          L lyrics · T text mode · B bg · [ ] preset · M pin · E/H/X parts ·
+          F voice · Y layout · 1-5/0 combos · D debug · S semantics · K knobs
         </p>
       </main>
     </>

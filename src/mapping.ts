@@ -5,9 +5,11 @@
  * and how much. One hardcoded mapping; presets and seeds are step 5.
  */
 
-import type { BehaviorName } from './behaviors'
+import type { LayoutName } from './layout'
+import type { EntranceName, ExitName, HoldName } from './parts'
 import type { SemanticSection } from './semantics'
 import { MAPPING, SCENE, TEXT } from './tuning'
+import type { VoiceName } from './voices'
 
 export type Motif = 'drift' | 'embers' | 'rain' | 'stars' | 'haze'
 
@@ -118,12 +120,11 @@ function span(atZero: number, atFull: number, t: number): number {
 // --- kinetic typography ------------------------------------------------------
 
 export interface TextParams {
-  behavior: BehaviorName
-  /** Heavy display face vs the light one. */
-  heavy: boolean
-  caps: boolean
-  /** Letter tracking in ems. */
-  tracking: number
+  voice: VoiceName
+  entrance: EntranceName
+  hold: HoldName
+  exit: ExitName
+  layout: LayoutName
   fill: Rgb
   accent: Rgb
   tint: Rgb
@@ -134,50 +135,113 @@ export interface TextParams {
   /** Emphasis -> scrim strength under the text. */
   scrim: number
   emphasis: number
-  /** Emphasis >= TEXT.shatterEmphasis: the line exits by shattering. */
-  shatterExit: boolean
 }
 
 interface MoodText {
-  behavior: BehaviorName
-  heavy: boolean
-  caps: boolean
-  tracking: number
+  hold: HoldName
+  voice: VoiceName
+  /** Lines at high emphasis may switch to this voice. */
+  accentVoice: VoiceName
 }
 
-const DEFAULT_TEXT: MoodText = { behavior: 'float', heavy: false, caps: false, tracking: 0.08 }
+const DEFAULT_TEXT: MoodText = { hold: 'bob', voice: 'air', accentVoice: 'marker' }
 
-/** Mood -> default behavior and type style. Unknown moods get the default. */
+/** Mood -> hold part and type voice. Unknown moods get the default. */
 const MOOD_TEXT: Record<string, MoodText> = {
-  calm: { behavior: 'float', heavy: false, caps: false, tracking: 0.1 },
-  mournful: { behavior: 'float', heavy: false, caps: false, tracking: 0.12 },
-  suspended: { behavior: 'float', heavy: false, caps: false, tracking: 0.15 },
-  tense: { behavior: 'tremble', heavy: true, caps: false, tracking: 0.02 },
-  menacing: { behavior: 'slam', heavy: true, caps: true, tracking: 0.04 },
-  furious: { behavior: 'slam', heavy: true, caps: true, tracking: 0.02 },
-  weary: { behavior: 'swing', heavy: false, caps: false, tracking: 0.06 },
-  grieving: { behavior: 'drop', heavy: false, caps: false, tracking: 0.08 },
-  brooding: { behavior: 'swing', heavy: true, caps: false, tracking: 0.05 },
-  hollow: { behavior: 'drop', heavy: false, caps: false, tracking: 0.2 },
+  calm: { hold: 'bob', voice: 'air', accentVoice: 'condensed' },
+  mournful: { hold: 'bob', voice: 'whisper', accentVoice: 'condensed' },
+  suspended: { hold: 'still', voice: 'air', accentVoice: 'condensed' },
+  tense: { hold: 'tremble', voice: 'mono', accentVoice: 'marker' },
+  menacing: { hold: 'jolt', voice: 'condensed', accentVoice: 'marker' },
+  furious: { hold: 'jolt', voice: 'block', accentVoice: 'marker' },
+  weary: { hold: 'pendulum', voice: 'slab', accentVoice: 'marker' },
+  grieving: { hold: 'still', voice: 'serif', accentVoice: 'condensed' },
+  brooding: { hold: 'pendulum', voice: 'serif', accentVoice: 'marker' },
+  hollow: { hold: 'still', voice: 'mono', accentVoice: 'condensed' },
+}
+
+/** Calm at the left, violent at the right; energy indexes into it. */
+export const ENTRANCE_LADDER: EntranceName[] = [
+  'unfold', 'buoy', 'pop', 'creep', 'hang', 'assemble', 'fall', 'fling', 'whip', 'slam',
+]
+
+/** Each hold's natural exit, for mid-emphasis lines. */
+const DEFAULT_EXIT: Record<HoldName, ExitName> = {
+  jolt: 'tumble',
+  rest: 'collapse',
+  bob: 'liftOff',
+  tremble: 'tumble',
+  pendulum: 'tumble',
+  pulse: 'tumble',
+  wave: 'blow',
+  still: 'sink',
+}
+
+function lineHash(lineStart: number): number {
+  return (Math.abs(Math.round(lineStart * 100)) * 2654435761) >>> 0
+}
+
+/**
+ * Energy picks a 3-wide window on the ladder (calmer at low energy,
+ * violent at high); the line's hash picks within it, shifting once if
+ * the previous line would have landed on the same entrance.
+ */
+export function entranceForLine(
+  energy: number,
+  lineStart: number | null,
+  prevLineStart: number | null,
+): EntranceName {
+  const n = ENTRANCE_LADDER.length
+  const center = Math.round(Math.max(0, Math.min(1, energy)) * (n - 1))
+  const lo = Math.max(0, Math.min(n - 3, center - 1))
+  const window = ENTRANCE_LADDER.slice(lo, lo + 3)
+  if (lineStart === null) return window[1]
+  const pick = (t: number) => window[lineHash(t) % 3]
+  let choice = pick(lineStart)
+  if (prevLineStart !== null && pick(prevLineStart) === choice) {
+    choice = window[(lineHash(lineStart) + 1) % 3]
+  }
+  return choice
+}
+
+/** Emphasis -> exit: shatter/knock at the top, sink/blow at the bottom. */
+export function exitForLine(emphasis: number, hold: HoldName, lineStart: number | null): ExitName {
+  const hash = lineHash(lineStart ?? 0)
+  if (emphasis >= TEXT.shatterEmphasis) return hash % 2 === 0 ? 'shatter' : 'knock'
+  if (emphasis <= 0.3) return hash % 2 === 0 ? 'sink' : 'blow'
+  return DEFAULT_EXIT[hold]
+}
+
+/** Emphasis -> layout. Focus still needs the pace gate in the layer. */
+export function layoutForLine(emphasis: number): LayoutName {
+  if (emphasis >= 0.8) return 'focus'
+  if (emphasis >= 0.65) return 'lockup'
+  return 'centered'
 }
 
 const NEUTRAL_FILL: Rgb = [232, 238, 248]
 const NEUTRAL_ACCENT: Rgb = [255, 180, 90]
 const NEUTRAL_TINT: Rgb = [255, 148, 64]
 
-/** Pure, like paramsForSection: same section + emphasis, same params. */
-export function textParamsForSection(
+/**
+ * Pure and deterministic: the same section, emphasis and line always
+ * produce the same parts. `prevLineStart` only breaks entrance repeats.
+ */
+export function textParamsForLine(
   section: SemanticSection | null,
   emphasis: number,
+  lineStart: number | null,
+  prevLineStart: number | null,
 ): TextParams {
   const style = section ? (MOOD_TEXT[section.mood.toLowerCase()] ?? DEFAULT_TEXT) : DEFAULT_TEXT
   const energy = section?.energy ?? 0.5
   const palette = section?.palette.map(hexToRgb)
   return {
-    behavior: style.behavior,
-    heavy: style.heavy,
-    caps: style.caps,
-    tracking: style.tracking,
+    voice: emphasis >= TEXT.shatterEmphasis ? style.accentVoice : style.voice,
+    entrance: entranceForLine(energy, lineStart, prevLineStart),
+    hold: style.hold,
+    exit: exitForLine(emphasis, style.hold, lineStart),
+    layout: layoutForLine(emphasis),
     fill: palette?.[2] ?? NEUTRAL_FILL,
     accent: palette?.[3] ?? palette?.[1] ?? NEUTRAL_ACCENT,
     tint: palette?.[1] ?? NEUTRAL_TINT,
@@ -185,7 +249,6 @@ export function textParamsForSection(
     sizeScale: 0.75 + emphasis * 0.5,
     scrim: Math.min(1, TEXT.scrimBase + emphasis * TEXT.scrimEmphasis),
     emphasis,
-    shatterExit: emphasis >= TEXT.shatterEmphasis,
   }
 }
 

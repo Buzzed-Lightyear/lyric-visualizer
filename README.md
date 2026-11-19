@@ -50,10 +50,13 @@ To use different file names, change the constants in `src/App.tsx`.
 - `[` / `]`: cycle butterchurn presets (for auditioning)
 - `M`: pin the current preset to the current section's mood (saved in
   localStorage; also logs a line to paste into `src/presetMap.ts`)
-- `1`-`5`: force a text behavior (slam, drop, float, tremble, swing);
-  `0` returns control to the mood mapping
-- `D`: debug overlay — analysis bars, section, committed key, motif,
-  emphasis, background mode + preset name, text mode + behavior
+- `E` / `H` / `X`: cycle the entrance / hold / exit part
+- `F`: cycle the type voice; `Y`: cycle the layout
+- `1`-`5`: force one of the original five combinations (slam, drop,
+  float, tremble, swing); `0` returns everything to the mood mapping
+- `D`: debug overlay — analysis bars, section, committed key, emphasis,
+  background mode + preset name, and the current voice, layout,
+  entrance, hold and exit (with forced overrides marked)
 - `S`: toggle semantics on/off (off reproduces the step 2 look, for A/B)
 - `K`: tuning panel (Tweakpane) — live sliders for every numeric knob in
   `src/tuning.ts`, grouped by module. Edits apply on the next frame and
@@ -62,30 +65,74 @@ To use different file names, change the constants in `src/App.tsx`.
 
 ## Step 3 spike: MilkDrop background + kinetic typography
 
-An exploration rig for auditioning motion behaviors and presets, not a
-finished look. Three layers: butterchurn (WebGL 2, falls back to the
-canvas scene if unavailable) renders MilkDrop-style visuals fed by the
-same `MediaElementSource`; a dark scrim plus a palette tint keeps text
+An exploration rig for auditioning motion and presets, not a finished
+look. Three layers: butterchurn (WebGL 2, falls back to the canvas scene
+if unavailable) renders MilkDrop-style visuals fed by the same
+MediaElementSource; a dark scrim plus a palette tint keeps text
 readable; and a Canvas 2D layer on top runs physics-driven typography.
-Each word is a spring-tied body (hand-rolled, fixed-step, no physics
-library); behaviors (slam, drop, float, tremble, swing, plus a shatter
-exit for lines with emphasis >= 0.85) set the spring constants, forces,
-entrances and exits. Audio drives all ongoing motion: beat = impulse,
-bass = shake and scale pulse, level = energy. Mood picks the default
-behavior, type style (Archivo Black / Inter Light, both OFL) and the
-background preset (`src/presetMap.ts`); imagery tags are unused here.
+
+### Animation parts
+
+Every line gets an entrance, a hold and an exit — three independent
+parts. Audio drives all ongoing motion (beat = impulse, bass = shake and
+scale pulse, level = energy); semantics choose parts and strengths only.
+Letter-level bodies are used where a part needs them (pop, assemble,
+wave, shatter); words stay the unit for layout. Everything gets squash
+and stretch (area preserved, one strength knob: text › squashStretch)
+and optional ghost trails (text › ghostTrails, off by default).
+
+- Entrances: slam (from depth), fall, buoy (rise), creep (scale-in),
+  hang (tilted), whip (shoots in from a side, stretched), fling (thrown
+  on an arc with spin), pop (letters scale up, staggered), assemble
+  (letters fly in from scattered points), unfold (hinge on the baseline).
+- Holds: jolt (stiff, beats jolt), rest (gravity onto a floor), bob
+  (weak springs, bass bob), tremble (noise from mid/high), pendulum
+  (hangs and swings), pulse (breathes with bass), wave (a ripple runs
+  across the letters, kicked by beats), still.
+- Exits: tumble, collapse (floor gives way), liftOff, blow (a sideways
+  gust, staggered), sink (collapses to the line center), snap (hard cut
+  on the next beat), knock (the incoming line shoves the outgoing words
+  away), shatter (letters fly out and fall).
+- The original five behaviors are combinations: slam = slam/jolt/tumble,
+  drop = fall/rest/collapse, float = buoy/bob/liftOff, tremble =
+  creep/tremble/tumble, swing = hang/pendulum/tumble.
+- Legibility is kept by an assist: an extra spring toward the slot that
+  ramps in before the 0.35 s settle deadline, so even weak holds arrive
+  readable without ever being pinned at the tolerance edge.
+
+### Type voices
+
+Named voices (family, weight, case, tracking, italic), all OFL via
+Fontsource, loaded before the first frame: block (Archivo Black), air
+(Inter Light), condensed (Anton), serif (Playfair Display), whisper
+(Cormorant Garamond italic), mono (Space Mono), marker (Permanent
+Marker), slab (Alfa Slab One).
+
+### Layouts
+
+centered (wrapped rows), lockup (each row scaled to one block width),
+focus (one word at a time, large — only when the estimated pace is at or
+under 3 words/s with every word readable for 0.25 s, else it falls back
+to centered).
+
+### Mapping
+
+Mood -> hold + voice (+ an accent voice for lines with emphasis >= 0.85).
+Energy -> entrance (calm at low energy, violent at high), varied
+deterministically per line so consecutive lines differ. Emphasis ->
+size, layout (focus at the top, lockup in the middle) and exit (shatter
+or knock at the top, sink or blow at the bottom, else the hold's
+default).
 
 **Word onsets are an estimate**: the LRC is line-timed, so words are
 spread across the first ~70% of each line's duration (capped), weighted
-by word length (`src/onsets.ts`). Real word timing would need alignment
+by word length (src/onsets.ts). Real word timing would need alignment
 tooling, which is out of scope.
 
-Hard legibility rules, measured by `npm run shots`: within 0.35 s of its
-onset a word is upright (±8°), near its slot and on screen, and stays
-that way until its exit starts; rest boxes never overlap; at most the
-current and outgoing lines are on screen. The harness also films each
-behavior's entrance/settle/exit on made-up lines and smoke-tests
-butterchurn with an oscillator (skipped with a warning without WebGL 2).
+The harness films every entrance, hold, exit, voice and layout, sweeps
+all entrance x hold x exit combinations by introspection (no drawing)
+against the legibility rules, and checks that no frame ever drew text
+before the fonts were ready.
 
 ## Semantics file format
 
