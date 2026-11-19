@@ -54,7 +54,11 @@ export interface Knobs {
   dispose(): void
 }
 
-export function createKnobs(): Knobs {
+export interface KnobActions {
+  resetPresetFeedback?: () => void
+}
+
+export function createKnobs(actions: KnobActions = {}): Knobs {
   const pane = new Pane({ title: 'tuning (K)' })
   pane.hidden = true
   for (const [name, group] of Object.entries(GROUPS)) {
@@ -72,6 +76,11 @@ export function createKnobs(): Knobs {
   pane
     .addButton({ title: 'log values to console' })
     .on('click', () => console.log(JSON.stringify(TUNING, null, 2)))
+  if (actions.resetPresetFeedback) {
+    pane
+      .addButton({ title: 'reset preset feedback' })
+      .on('click', actions.resetPresetFeedback)
+  }
   return {
     toggle: () => {
       pane.hidden = !pane.hidden

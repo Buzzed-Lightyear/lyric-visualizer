@@ -2,10 +2,14 @@
  * The background layer: butterchurn (MilkDrop-style, WebGL 2) on its own
  * canvas, or the old scene, or black. B cycles. If WebGL 2 is missing,
  * butterchurn is marked unsupported and the mode falls back to the scene.
+ * Preset data loads lazily from the packs; which preset plays is decided
+ * by the caller (src/presetPick.ts scores the committed catalog).
  */
 
 import butterchurnModule, { type ButterchurnVisualizer } from 'butterchurn'
 import { getAudioGraph } from './analysis'
+import { getPreset } from './presetPacks'
+import { BUTTERCHURN } from './tuning'
 
 /** The UMD build lands as either the API object or { default: api }. */
 export function unwrapButterchurn(mod: unknown): typeof butterchurnModule {
@@ -14,8 +18,6 @@ export function unwrapButterchurn(mod: unknown): typeof butterchurnModule {
 }
 
 const butterchurn = unwrapButterchurn(butterchurnModule)
-import { presetNameForMood, PRESET_NAMES, PRESETS } from './presetMap'
-import { BUTTERCHURN } from './tuning'
 
 export type BackgroundMode = 'butterchurn' | 'scene' | 'black'
 
@@ -32,7 +34,9 @@ export class Background {
   private cssH = 1
   private appliedW = 0
   private appliedH = 0
-  private pendingMood: { mood: string; blendSec: number } | null = null
+  private pending: { name: string; blendSec: number } | null = null
+  /** Guards against an older async load landing after a newer one. */
+  private loadSeq = 0
 
   constructor(canvas: HTMLCanvasElement, audio: HTMLAudioElement) {
     this.canvas = canvas
@@ -65,27 +69,18 @@ export class Background {
     this.visualizer!.render()
   }
 
-  applyMood(mood: string, blendSec: number): void {
+  /** Load a preset by catalog name; queued until the visualizer exists. */
+  loadByName(name: string, blendSec: number): void {
     if (!this.visualizer) {
-      this.pendingMood = { mood, blendSec }
+      this.pending = { name, blendSec }
       return
     }
-    this.loadByName(presetNameForMood(mood), blendSec)
-  }
-
-  cyclePreset(direction: 1 | -1): void {
-    if (!this.visualizer || PRESET_NAMES.length === 0) return
-    const index = PRESET_NAMES.indexOf(this.currentPreset)
-    const next =
-      PRESET_NAMES[(index + direction + PRESET_NAMES.length) % PRESET_NAMES.length]
-    this.loadByName(next, BUTTERCHURN.cycleBlend)
-  }
-
-  private loadByName(name: string, blendSec: number): void {
-    const preset = PRESETS[name]
-    if (!preset || !this.visualizer) return
-    this.visualizer.loadPreset(preset, blendSec)
-    this.currentPreset = name
+    const seq = ++this.loadSeq
+    void getPreset(name).then((preset) => {
+      if (!preset || seq !== this.loadSeq || !this.visualizer) return
+      this.visualizer.loadPreset(preset, blendSec)
+      this.currentPreset = name
+    })
   }
 
   /** Lazy init: needs the audio graph (first play) and WebGL 2. */
@@ -111,9 +106,11 @@ export class Background {
       height: h,
     })
     this.visualizer.connectAudio(graph.source)
-    const initial = this.pendingMood ?? { mood: 'neutral', blendSec: 0 }
-    this.pendingMood = null
-    this.loadByName(presetNameForMood(initial.mood), initial.blendSec)
+    if (this.pending) {
+      const { name, blendSec } = this.pending
+      this.pending = null
+      this.loadByName(name, blendSec)
+    }
     return true
   }
 }

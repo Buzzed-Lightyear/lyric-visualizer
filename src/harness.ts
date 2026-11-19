@@ -15,7 +15,8 @@ import { unwrapButterchurn } from './background'
 import { LAYOUT_NAMES } from './layout'
 import { chooseMotif, NEUTRAL_PARAMS, paramsForSection, type SceneParams, type TextParams } from './mapping'
 import { ENTRANCE_NAMES, EXIT_NAMES, HOLD_NAMES } from './parts'
-import { PRESET_NAMES, PRESETS } from './presetMap'
+import { loadAllPresets } from './presetPacks'
+import { CATALOG, pickForSections } from './presetPick'
 import { createRandom } from './random'
 import { Scene } from './scene'
 import {
@@ -559,7 +560,8 @@ async function butterchurnSmoke(): Promise<Check> {
       height: 144,
     })
     visualizer.connectAudio(gain)
-    visualizer.loadPreset(PRESETS[PRESET_NAMES[0]], 0)
+    const presets = await loadAllPresets()
+    visualizer.loadPreset(Object.values(presets)[0], 0)
     for (let i = 0; i < 70; i++) {
       visualizer.render()
       await new Promise((resolve) => setTimeout(resolve, 15))
@@ -595,7 +597,12 @@ async function butterchurnSmoke(): Promise<Check> {
 
 // --- contact sheet -----------------------------------------------------------
 
-function buildSheet(tiles: Tile[], strips: Strip[], textStrips: TextStrip[]): void {
+function buildSheet(
+  tiles: Tile[],
+  strips: Strip[],
+  textStrips: TextStrip[],
+  pickLines: string[],
+): void {
   const sheet = document.getElementById('sheet') as HTMLCanvasElement
   const margin = 12
   const cols = 4
@@ -606,7 +613,8 @@ function buildSheet(tiles: Tile[], strips: Strip[], textStrips: TextStrip[]): vo
   const width = margin + cols * (TILE_W + margin)
   const stripY = margin + 24 + tileRows * (TILE_H + labelH + margin) + 24
   const textY = stripY + strips.length * (STRIP_H + labelH + margin) + 24
-  const height = textY + textStrips.length * (TEXT_H + labelH + margin) + margin
+  const picksY = textY + textStrips.length * (TEXT_H + labelH + margin) + 24
+  const height = picksY + pickLines.length * 16 + margin * 2
   sheet.width = width
   sheet.height = height
   const ctx = sheet.getContext('2d')!
@@ -645,6 +653,12 @@ function buildSheet(tiles: Tile[], strips: Strip[], textStrips: TextStrip[]): vo
     })
     ctx.fillStyle = '#cfd6e4'
     ctx.fillText(strip.name, margin, y + TEXT_H + 3)
+  })
+
+  ctx.fillStyle = '#cfd6e4'
+  ctx.fillText('background preset picks per section', margin, picksY - 20)
+  pickLines.forEach((line, i) => {
+    ctx.fillText(line, margin, picksY + i * 16)
   })
 }
 
@@ -858,7 +872,27 @@ async function run(): Promise<Report> {
   })
   checks.push(await butterchurnSmoke())
 
-  buildSheet(tiles, strips, textStrips)
+  // The chosen background preset per section of the song.
+  const feedback = (await import('./presetFeedback.json')).default as {
+    chosen: Record<string, string>
+    banned: string[]
+  }
+  const picks = pickForSections(semantics.sections, feedback)
+  const pickLines: string[] = []
+  for (const pick of picks.values()) {
+    if (!pick.chosen) {
+      pickLines.push(`${pick.label.padEnd(11)} -> (no usable preset)`)
+      continue
+    }
+    const entry = CATALOG[pick.chosen]
+    pickLines.push(
+      `${pick.label.padEnd(11)} -> ${pick.chosen.slice(0, 52)}${pick.fromFeedback ? '  [saved]' : ''}  (${pick.reasons.join(', ')})`,
+    )
+    pickLines.push(`${''.padEnd(11)}    "${entry?.description ?? ''}"`.slice(0, 120))
+  }
+  if (pickLines.length === 0) pickLines.push('(catalog empty)')
+
+  buildSheet(tiles, strips, textStrips, pickLines)
 
   return {
     checks,

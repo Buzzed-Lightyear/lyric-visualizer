@@ -14,7 +14,16 @@ import {
   EXIT_NAMES,
   HOLD_NAMES,
 } from './parts'
-import { pinPreset } from './presetMap'
+import feedbackJson from './presetFeedback.json'
+import {
+  CATALOG,
+  CATALOG_NAMES,
+  isUsable,
+  pickForSections,
+  rankForSection,
+  type Feedback,
+  type LabelPick,
+} from './presetPick'
 import { createRandom } from './random'
 import { Scene } from './scene'
 import {
@@ -26,6 +35,7 @@ import {
   type SemanticSection,
 } from './semantics'
 import { TextLayer, type PartOverrides } from './textLayer'
+import { BUTTERCHURN } from './tuning'
 import { loadAllFonts, VOICE_NAMES } from './voices'
 
 // The spike hardcodes one song. The files live in public/song/; only the
@@ -53,6 +63,7 @@ function App() {
   const [showLyrics, setShowLyrics] = useState(true)
   const [physicsText, setPhysicsText] = useState(true)
   const [semanticsErrors, setSemanticsErrors] = useState(0)
+  const [toast, setToast] = useState<{ text: string; key: number } | null>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const bgCanvasRef = useRef<HTMLCanvasElement>(null)
   const sceneCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -66,13 +77,74 @@ function App() {
   const showLyricsRef = useRef(true)
   const physicsTextRef = useRef(true)
   const overridesRef = useRef<PartOverrides>({})
+  const feedbackRef = useRef<Feedback>({
+    chosen: { ...(feedbackJson as Feedback).chosen },
+    banned: [...(feedbackJson as Feedback).banned],
+  })
+  const picksRef = useRef<Map<string, LabelPick>>(new Map())
+  const candidateIndexRef = useRef<Map<string, number>>(new Map())
+  const browseIndexRef = useRef(-1)
   const backgroundRef = useRef<Background | null>(null)
   const committedRef = useRef<Committed>({ key: 'neutral', energy: 0.5, section: null })
   const knobsRef = useRef<Knobs | null>(null)
 
+  const showToast = (text: string) => setToast({ text, key: Date.now() })
+
+  const saveFeedback = () => {
+    fetch('/__presetFeedback', {
+      method: 'POST',
+      body: JSON.stringify(feedbackRef.current),
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error('rejected')
+      })
+      .catch(() => showToast('feedback not saved (dev server only)'))
+  }
+
+  const recomputePicks = () => {
+    const semantics = semanticsRef.current
+    const fb = feedbackRef.current
+    const map = semantics
+      ? pickForSections(semantics.sections, fb)
+      : new Map<string, LabelPick>()
+    const candidates = rankForSection(null, fb)
+    const saved = fb.chosen['neutral']
+    const chosen =
+      saved && isUsable(saved, fb) ? saved : (candidates[0]?.name ?? null)
+    const scored = candidates.find((c) => c.name === chosen)
+    map.set('neutral', {
+      label: 'neutral',
+      candidates,
+      chosen,
+      fromFeedback: Boolean(saved && isUsable(saved, fb)),
+      reasons: scored?.reasons ?? [],
+      runnerUp: candidates.find((c) => c.name !== chosen)?.name ?? null,
+    })
+    picksRef.current = map
+  }
+
+  const loadForLabel = (label: string, blendSec: number) => {
+    const pick = picksRef.current.get(label)
+    if (pick?.chosen) backgroundRef.current?.loadByName(pick.chosen, blendSec)
+  }
+
   useEffect(() => {
-    const knobs = createKnobs()
+    const knobs = createKnobs({
+      resetPresetFeedback: () => {
+        feedbackRef.current = { chosen: {}, banned: [] }
+        recomputePicks()
+        saveFeedback()
+        showToast('preset feedback reset')
+      },
+    })
     knobsRef.current = knobs
+    // The old M-key pins were pressed at random; they are noise. Gone.
+    try {
+      localStorage.removeItem('lyric-visualizer.presetPins')
+    } catch {
+      // localStorage unavailable
+    }
+    recomputePicks()
     // Canvas ctx.font never triggers CSS font loading; request every face
     // up front — the text layer refuses to draw until all are ready.
     void loadAllFonts()
@@ -80,7 +152,14 @@ function App() {
       knobsRef.current = null
       knobs.dispose()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (!toast) return
+    const id = setTimeout(() => setToast(null), 2600)
+    return () => clearTimeout(id)
+  }, [toast])
 
   useEffect(() => {
     let cancelled = false
@@ -120,6 +199,7 @@ function App() {
         }
         if (cancelled) return
         semanticsRef.current = semantics
+        recomputePicks()
         setSemanticsErrors(errors.length)
       })
       .catch(() => {})
@@ -148,13 +228,55 @@ function App() {
         })
       }
       if (key === 'b') backgroundRef.current?.cycleMode()
-      if (key === '[') backgroundRef.current?.cyclePreset(-1)
-      if (key === ']') backgroundRef.current?.cyclePreset(1)
-      if (key === 'm') {
-        const background = backgroundRef.current
-        const mood = committedRef.current.section?.mood ?? 'neutral'
-        if (background && background.currentPreset !== '(none)') {
-          pinPreset(mood, background.currentPreset)
+      if (event.key === ']' || event.key === '[') {
+        const label = committedRef.current.section?.label ?? 'neutral'
+        const pick = picksRef.current.get(label)
+        if (pick && pick.candidates.length > 0) {
+          const n = pick.candidates.length
+          const current =
+            candidateIndexRef.current.get(label) ??
+            Math.max(0, pick.candidates.findIndex((c) => c.name === pick.chosen))
+          const next = (current + (event.key === ']' ? 1 : -1) + n) % n
+          candidateIndexRef.current.set(label, next)
+          const name = pick.candidates[next].name
+          feedbackRef.current.chosen[label] = name
+          recomputePicks()
+          saveFeedback()
+          backgroundRef.current?.loadByName(name, BUTTERCHURN.cycleBlend)
+          showToast(`${label}: candidate ${next + 1} of ${n}, saved`)
+        }
+      }
+      if (event.key === '}' || event.key === '{') {
+        // Browse the whole catalog; nothing is saved.
+        if (CATALOG_NAMES.length > 0) {
+          if (browseIndexRef.current < 0) {
+            browseIndexRef.current = Math.max(
+              0,
+              CATALOG_NAMES.indexOf(backgroundRef.current?.currentPreset ?? ''),
+            )
+          }
+          browseIndexRef.current =
+            (browseIndexRef.current + (event.key === '}' ? 1 : -1) + CATALOG_NAMES.length) %
+            CATALOG_NAMES.length
+          const name = CATALOG_NAMES[browseIndexRef.current]
+          backgroundRef.current?.loadByName(name, BUTTERCHURN.cycleBlend)
+          showToast(`browse ${browseIndexRef.current + 1}/${CATALOG_NAMES.length}: ${name}`)
+        }
+      }
+      if (key === 'n') {
+        const name = backgroundRef.current?.currentPreset
+        if (name && name !== '(none)') {
+          const fb = feedbackRef.current
+          if (!fb.banned.includes(name)) fb.banned.push(name)
+          for (const [label, chosen] of Object.entries(fb.chosen)) {
+            if (chosen === name) delete fb.chosen[label]
+          }
+          const label = committedRef.current.section?.label ?? 'neutral'
+          candidateIndexRef.current.delete(label)
+          recomputePicks()
+          saveFeedback()
+          loadForLabel(label, BUTTERCHURN.cycleBlend)
+          showToast(`banned ${name}`)
         }
       }
       const cycle = <T,>(list: readonly T[], current: T | null | undefined): T => {
@@ -245,7 +367,7 @@ function App() {
       )
       if (commit) {
         committedRef.current = commit.value
-        background.applyMood(commit.value.section?.mood ?? 'neutral', commit.blendSec)
+        loadForLabel(commit.value.section?.label ?? 'neutral', commit.blendSec)
       }
 
       // Background layer.
@@ -281,11 +403,16 @@ function App() {
         const o = overridesRef.current
         const eff = (over: string | null | undefined, mapped: string) =>
           over ? `${over} (forced)` : mapped
+        const committedLabel = committedRef.current.section?.label ?? 'neutral'
+        const pick = picksRef.current.get(committedLabel)
+        const entry = CATALOG[background.currentPreset]
         drawDebug(text.context, frame, [
           `sem    ${!semanticsRef.current ? 'none loaded' : semanticsOnRef.current ? 'on' : 'off (neutral)'}`,
           `sect   ${section ? `${section.label} · ${section.mood} · energy ${section.energy.toFixed(2)}` : '(none)'}`,
           `commit ${committedRef.current.key}  ·  emph ${emphasis.toFixed(2)}  ·  motif ${tag ? `${motif}<-${tag}` : motif}`,
-          `bg     ${mode}  ·  ${background.currentPreset}`,
+          `bg     ${mode}  ·  ${background.currentPreset}${pick?.fromFeedback ? ' (saved)' : ''}`,
+          `pick   ${entry ? entry.description.slice(0, 58) : '(not in catalog)'}`,
+          `why    ${pick?.reasons.join(' · ') || '—'}  ·  next ${(pick?.runnerUp ?? '—').slice(0, 26)}`,
           `text   ${physicsTextRef.current ? 'physics' : 'dom line'}  ·  voice ${eff(o.voice, textParams.voice)}  ·  layout ${eff(o.layout, textParams.layout)}`,
           `parts  in ${eff(o.entrance, textParams.entrance)}  ·  hold ${eff(o.hold, textParams.hold)}  ·  out ${eff(o.exit, textParams.exit)}`,
         ])
@@ -346,9 +473,11 @@ function App() {
             {activeLine?.text ?? ' '}
           </p>
         )}
+        {toast && <p className="toast">{toast.text}</p>}
         <p className="hint">
-          L lyrics · T text mode · B bg · [ ] preset · M pin · E/H/X parts ·
-          F voice · Y layout · 1-5/0 combos · D debug · S semantics · K knobs
+          L lyrics · T text mode · B bg · [ ] candidate · {'{ }'} browse ·
+          N ban · E/H/X parts · F voice · Y layout · 1-5/0 combos · D debug ·
+          S semantics · K knobs
         </p>
       </main>
     </>

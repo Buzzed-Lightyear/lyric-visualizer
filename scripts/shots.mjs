@@ -109,8 +109,10 @@ try {
     await app.waitForTimeout(1500)
     // Cycle to the canvas-scene background so there is something to sample
     // (butterchurn needs a play gesture), then exercise every key once.
+    // No [ ] or N here: those save feedback through the dev endpoint and
+    // a verify run must not mutate src/presetFeedback.json.
     await app.keyboard.press('b')
-    for (const key of ['l', 'd', 's', 'k', 't', '[', ']', 'm', '1', '0', 'l', 'd', 's', 'k', 't'])
+    for (const key of ['l', 'd', 's', 'k', 't', '{', '}', 'e', 'h', 'x', 'f', 'y', '1', '0', 'l', 'd', 's', 'k', 't'])
       await app.keyboard.press(key)
     await app.waitForTimeout(500)
     const appOk = await app.evaluate(() => {

@@ -326,6 +326,26 @@ export const ASSIST = {
   rampStart: 0.35,
 }
 
+/** Weights for scoring catalog presets against a section. */
+export const PRESET_SCORE = {
+  /** Closeness of the tagged axes to the mood's axes. */
+  axes: 1,
+  /** Section energy vs the preset's arousal and measured motion. */
+  energy: 0.5,
+  /** Section palette vs the preset's dominant colors. */
+  palette: 0.6,
+  /** Section imagery vs the preset's tags (through synonyms). */
+  imagery: 0.7,
+  /** Measured white-text readability. */
+  readability: 0.6,
+  /** Tagged quality (1-5). */
+  quality: 0.5,
+  /** Penalty multiplier applied to presets flagged slow. */
+  slowPenalty: 0.85,
+  /** Ranked candidates kept per section label (the ] [ cycle). */
+  candidates: 8,
+}
+
 export const MAPPING = {
   /** Energy 0 -> AtZero, energy 1 -> AtFull (multiplied into the baselines). */
   countAtZero: 0.5,

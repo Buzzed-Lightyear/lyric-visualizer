@@ -31,3 +31,6 @@ public/song/*
 
 # Visual verification output
 shots/
+
+# Preset capture output (regenerate with npm run catalog)
+catalog-strips/

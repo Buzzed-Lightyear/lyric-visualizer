@@ -47,9 +47,10 @@ To use different file names, change the constants in `src/App.tsx`.
 - `L`: show or hide the lyrics (physics text or the DOM line)
 - `T`: physics text vs the old single DOM lyric line
 - `B`: cycle the background — butterchurn / canvas scene / black
-- `[` / `]`: cycle butterchurn presets (for auditioning)
-- `M`: pin the current preset to the current section's mood (saved in
-  localStorage; also logs a line to paste into `src/presetMap.ts`)
+- `[` / `]`: previous / next ranked candidate for the current section
+  (top 8); the choice is saved for that section label
+- `N`: never show this preset again, then move to the next candidate
+- `Shift+[` / `Shift+]`: browse the whole catalog (not saved)
 - `E` / `H` / `X`: cycle the entrance / hold / exit part
 - `F`: cycle the type voice; `Y`: cycle the layout
 - `1`-`5`: force one of the original five combinations (slam, drop,
@@ -133,6 +134,37 @@ The harness films every entrance, hold, exit, voice and layout, sweeps
 all entrance x hold x exit combinations by introspection (no drawing)
 against the legibility rules, and checks that no frame ever drew text
 before the fonts were ready.
+
+## Background preset catalog
+
+All four installed butterchurn-presets packs load lazily (~395 distinct
+presets). `npm run catalog` renders every preset headlessly against a
+scripted test track (butterchurn's render() takes injected audio and a
+fixed clock, so capture is offline and deterministic: quiet part, loud
+part, steady beats) and writes a 4-frame strip per preset plus measured
+numbers (dominant colors, brightness, saturation, motion, detail, beat
+response, flicker, white-text readability, draw cost) to the gitignored
+`catalog-strips/`. It is resumable and flags presets that error, stay
+blank, strobe hard, or cost far more than the median.
+
+Tagging: subagents read each preset's strip and measurements (the name
+is an ID only) and return a one-sentence description, four 0..1 axes
+(arousal, valence, tension, warmth), 1-4 imagery tags from a fixed
+vocabulary, and a 1-5 quality score — see `scripts/tagging-rubric.md`.
+Six hand-tagged anchors calibrate every batch and two control presets
+repeat across all batches; a batch whose controls stray is rerun.
+`scripts/mergeCatalog.mjs` validates and merges everything into the
+committed `src/presetCatalog.json`.
+
+Picking: each mood maps to the same four axes; every usable preset is
+scored per section (axes closeness, energy vs arousal and motion,
+palette vs dominant colors, imagery overlap through synonyms,
+readability, quality — weights in `tuning.ts` PRESET_SCORE). Banned,
+broken, blank and hard-strobing presets never play; same-label sections
+share one preset; neighbouring sections never share; same inputs give
+the same picks. Your [ ] / N feedback persists to
+`src/presetFeedback.json` through a dev-only Vite endpoint (reset
+button in the K panel).
 
 ## Semantics file format
 

@@ -38,4 +38,9 @@ export const THRESHOLDS = {
   legibilityEpsDeg: 0.5,
   /** Butterchurn smoke: minimum luminance stddev of a rendered frame. */
   butterchurnMinStdDev: 2,
+  /**
+   * Tagging control presets: max mean-absolute-deviation from the
+   * cross-batch median, per axis, for batches to count as agreeing.
+   */
+  controlAxisMad: 0.15,
 } as const

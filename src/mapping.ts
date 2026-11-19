@@ -160,6 +160,38 @@ const MOOD_TEXT: Record<string, MoodText> = {
   hollow: { hold: 'still', voice: 'mono', accentVoice: 'condensed' },
 }
 
+/** The four background axes a mood maps onto (all 0..1). */
+export interface MoodAxes {
+  /** Calm to intense. */
+  arousal: number
+  /** Dark and heavy to bright and uplifting. */
+  valence: number
+  /** Smooth to harsh or chaotic. */
+  tension: number
+  /** Cool to warm. */
+  warmth: number
+}
+
+export const NEUTRAL_AXES: MoodAxes = { arousal: 0.5, valence: 0.5, tension: 0.5, warmth: 0.5 }
+
+const MOOD_AXES: Record<string, MoodAxes> = {
+  calm: { arousal: 0.2, valence: 0.6, tension: 0.2, warmth: 0.5 },
+  mournful: { arousal: 0.25, valence: 0.3, tension: 0.3, warmth: 0.35 },
+  suspended: { arousal: 0.3, valence: 0.5, tension: 0.35, warmth: 0.4 },
+  tense: { arousal: 0.6, valence: 0.35, tension: 0.75, warmth: 0.45 },
+  menacing: { arousal: 0.7, valence: 0.2, tension: 0.8, warmth: 0.55 },
+  furious: { arousal: 0.95, valence: 0.15, tension: 0.9, warmth: 0.75 },
+  weary: { arousal: 0.35, valence: 0.35, tension: 0.4, warmth: 0.5 },
+  grieving: { arousal: 0.3, valence: 0.2, tension: 0.45, warmth: 0.35 },
+  brooding: { arousal: 0.45, valence: 0.25, tension: 0.55, warmth: 0.45 },
+  hollow: { arousal: 0.3, valence: 0.3, tension: 0.5, warmth: 0.3 },
+}
+
+/** Unknown mood words are neutral. */
+export function moodAxes(mood: string | null): MoodAxes {
+  return (mood && MOOD_AXES[mood.toLowerCase()]) || NEUTRAL_AXES
+}
+
 /** Calm at the left, violent at the right; energy indexes into it. */
 export const ENTRANCE_LADDER: EntranceName[] = [
   'unfold', 'buoy', 'pop', 'creep', 'hang', 'assemble', 'fall', 'fling', 'whip', 'slam',
