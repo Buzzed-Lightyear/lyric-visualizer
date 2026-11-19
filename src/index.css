@@ -17,3 +17,12 @@ main {
 audio {
   width: 100%;
 }
+
+/* Reserves its line so the layout doesn't shift during instrumental gaps. */
+.lyric-line {
+  min-height: 2.25rem;
+  margin-top: 2rem;
+  font-size: 1.5rem;
+  text-align: center;
+  text-wrap: balance;
+}

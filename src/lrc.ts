@@ -47,3 +47,23 @@ export function parseLrc(source: string): LyricLine[] {
     .map(({ ms, text }) => ({ time: Math.max(0, ms - offsetMs) / 1000, text }))
     .sort((a, b) => a.time - b.time)
 }
+
+/**
+ * Index of the last line with `time <= time`, or -1 before the first line.
+ * Binary search over the sorted lines.
+ */
+export function activeLineIndex(lines: LyricLine[], time: number): number {
+  let low = 0
+  let high = lines.length - 1
+  let found = -1
+  while (low <= high) {
+    const mid = (low + high) >> 1
+    if (lines[mid].time <= time) {
+      found = mid
+      low = mid + 1
+    } else {
+      high = mid - 1
+    }
+  }
+  return found
+}
