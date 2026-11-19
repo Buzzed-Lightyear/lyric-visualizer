@@ -28,3 +28,6 @@ public/song/*
 *.njsproj
 *.sln
 *.sw?
+
+# Visual verification output
+shots/

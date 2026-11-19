@@ -6,16 +6,22 @@
  */
 
 import type { SemanticSection } from './semantics'
-import { MAPPING, SCENE, type Motif } from './tuning'
+import { MAPPING, SCENE } from './tuning'
+
+export type Motif = 'drift' | 'embers' | 'rain' | 'stars' | 'haze'
 
 export type Rgb = [number, number, number]
 
 export interface SceneParams {
+  /** Identity of the section these params came from; a change starts a transition. */
+  key: string
+  /** The section's 0..1 energy; paces transitions. */
+  energy: number
   background: Rgb
   glowColor: Rgb
   particleColor: Rgb
   ringColor: Rgb
-  /** Absolute particle count (capped by the scene's pool). */
+  /** Absolute particle count for count-driven motifs. */
   particleCount: number
   /** Multipliers on the step 2 baselines; 1 = step 2 look. */
   speed: number
@@ -23,13 +29,15 @@ export interface SceneParams {
   jitter: number
   /** Vertical drift bias: positive rises, negative sinks. */
   lift: number
-  /** How hard audio accents (beat kicks) land. 1 = step 2. */
+  /** How hard audio accents (beat kicks, glow, size) land. 1 = step 2. */
   accent: number
   motif: Motif
 }
 
 /** Reproduces the step 2 look exactly; used between sections and with S off. */
 export const NEUTRAL_PARAMS: SceneParams = {
+  key: 'neutral',
+  energy: 0.5,
   background: [8, 10, 18],
   glowColor: [255, 148, 64],
   particleColor: [168, 200, 255],
@@ -61,7 +69,8 @@ const MOODS: Record<string, { jitter: number; lift: number }> = {
 
 /**
  * Only the motifs this song's imagery needs. Near-synonyms land on the
- * closest motif; any unlisted tag falls through to the step 2 drift.
+ * closest motif; any unlisted tag falls through to haze (the most
+ * generic). Drift is reserved for the neutral look.
  */
 const IMAGERY_TO_MOTIF: Record<string, Motif> = {
   embers: 'embers',
@@ -75,9 +84,15 @@ const IMAGERY_TO_MOTIF: Record<string, Motif> = {
   stars: 'stars',
   'night-sky': 'stars',
   prayer: 'stars',
+  haze: 'haze',
+  smoke: 'haze',
+  'city-night': 'haze',
+  streetlights: 'haze',
+  fluorescent: 'haze',
+  fog: 'haze',
 }
 
-/** First imagery tag with a motif wins; none of them -> drift. */
+/** First imagery tag with a motif wins; none of them -> haze. */
 export function chooseMotif(imagery: readonly string[]): {
   motif: Motif
   tag: string | null
@@ -86,7 +101,7 @@ export function chooseMotif(imagery: readonly string[]): {
     const motif = IMAGERY_TO_MOTIF[tag.toLowerCase()]
     if (motif) return { motif, tag }
   }
-  return { motif: 'drift', tag: null }
+  return { motif: 'haze', tag: null }
 }
 
 function hexToRgb(hex: string): Rgb {
@@ -111,6 +126,8 @@ export function paramsForSection(
   const motion = MOODS[section.mood.toLowerCase()] ?? NEUTRAL_MOTION
   const palette = section.palette.map(hexToRgb)
   return {
+    key: `${section.label}@${section.start}`,
+    energy: section.energy,
     background: palette[0],
     glowColor: palette[1],
     particleColor: palette[2],
@@ -123,29 +140,5 @@ export function paramsForSection(
     lift: motion.lift,
     accent: span(MAPPING.accentAtZero, MAPPING.accentAtFull, emphasis),
     motif: chooseMotif(section.imagery).motif,
-  }
-}
-
-/** Eases every numeric field toward the target so section changes look intended. */
-export class ParamEaser {
-  private readonly current: SceneParams = {
-    ...NEUTRAL_PARAMS,
-    background: [...NEUTRAL_PARAMS.background],
-    glowColor: [...NEUTRAL_PARAMS.glowColor],
-    particleColor: [...NEUTRAL_PARAMS.particleColor],
-    ringColor: [...NEUTRAL_PARAMS.ringColor],
-  }
-
-  step(target: SceneParams, dt: number): SceneParams {
-    const k = 1 - Math.exp(-dt / MAPPING.easeTau)
-    const c = this.current
-    const numbers = ['particleCount', 'speed', 'glowScale', 'jitter', 'lift', 'accent'] as const
-    for (const key of numbers) c[key] += (target[key] - c[key]) * k
-    const colors = ['background', 'glowColor', 'particleColor', 'ringColor'] as const
-    for (const key of colors) {
-      for (let i = 0; i < 3; i++) c[key][i] += (target[key][i] - c[key][i]) * k
-    }
-    c.motif = target.motif
-    return c
   }
 }

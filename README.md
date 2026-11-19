@@ -10,6 +10,27 @@ npm install
 npm run dev
 ```
 
+## Verify it
+
+```sh
+npm run verify   # lint + build + unit tests + visual checks
+```
+
+`npm run shots` drives the real scene headlessly (Playwright) through a
+dev-only harness (`/harness.html`): it steps the scene with a fixed
+1/60 s clock and a scripted audio track built from the committed
+semantics file (level follows section energy, steady 120 BPM beat), so
+no audio file is needed. It writes `shots/contact-sheet.png` (one
+labeled tile per section plus an 8-frame filmstrip across every section
+boundary) and `shots/report.json`, and fails on the checks defined in
+`src/thresholds.ts`: blank tiles, differently labeled sections that look
+alike, the two choruses not matching, semantics-off differing from the
+neutral look, motion not rising with loudness (or freezing at silence),
+single-frame jumps inside transitions, and draw time over budget. The
+scene is deterministic (seeded randomness, no clock or window reads), so
+repeats of a section render identically. Look at the contact sheet after
+changing visuals; the checks catch regressions, not taste.
+
 ## Song files
 
 Steps 1-3 hardcode one song. Put your own files here:
@@ -49,8 +70,14 @@ To use different file names, change the constants in `src/App.tsx`.
 - `mood` is one short word mapped to motion character (smooth vs jittery,
   rising vs sinking); unknown moods fall back to neutral.
 - `palette` is 3-5 hex colors: background, glow, particles, accent ring.
-- `imagery` tags pick the particle motif (embers, rain, stars, or the
-  default drift); the first tag with a mapping wins.
+- `imagery` tags pick the motif; the first tag with a mapping wins, and
+  unknown tags fall through to haze. Motifs: **embers** (rise from the
+  bottom, flicker, cool as they climb, heat glow along the bottom),
+  **rain** (long angled streaks in depth layers, dim glow high up),
+  **stars** (fixed field with slow parallax, twinkle from high, soft
+  horizon glow), **haze** (large drifting blobs and blurred bokeh
+  lights; smoke, city-night, streetlights, fluorescent land here), and
+  **drift** (the step 2 look, used only for neutral).
 - `lines` map an LRC start time to emphasis 0..1: how hard beat accents
   land during that line. Unlisted lines default to 0.5.
 
@@ -67,12 +94,19 @@ scene runs neutral.
   canvas scene. Paused, it settles into a slow idle.
 - **Step 3, fake the semantics: built.** A hand-written semantics file is
   mapped per-frame to `SceneParams` (colors, intensity, motion character,
-  motif, accent strength), eased over ~1.5 s at section changes. Audio
-  decides when things move; semantics decide what and how much. This is
-  the go/no-go test for the whole idea.
+  motif, accent strength). Each motif is its own renderer with depth
+  layers, additive blending and soft sprites over a palette gradient
+  background with a vignette. A section change commits on the next beat
+  (or after 0.4 s), then the outgoing and incoming motifs crossfade:
+  fast with an accent on an energy rise, as a slow dissolve on a fall.
+  Audio decides when things move; semantics decide what and how much.
+  This is the go/no-go test for the whole idea.
 - Next (provisional): step 4, LLM extraction of the same schema.
 
-Analysis (`src/analysis.ts`), mapping (`src/mapping.ts`) and rendering
-(`src/scene.ts`) are separate: the renderer sees only
+Analysis (`src/analysis.ts` for the Web Audio graph, `src/audioMath.ts`
+for the spectrum math on plain arrays), mapping (`src/mapping.ts`) and
+rendering (`src/scene.ts` orchestrating the motif renderers in
+`src/motifs.ts`) are separate: the renderer sees only
 `(AudioFrame, SceneParams, dt)`. The semantic schema and its validation
-live in `src/semantics.ts`. All tuning constants live in `src/tuning.ts`.
+live in `src/semantics.ts`. All tuning constants live in `src/tuning.ts`;
+verify thresholds in `src/thresholds.ts`.

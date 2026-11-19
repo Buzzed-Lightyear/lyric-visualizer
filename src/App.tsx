@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { AudioAnalysis } from './analysis'
 import { activeLineIndex, parseLrc, type LyricLine } from './lrc'
-import { chooseMotif, NEUTRAL_PARAMS, ParamEaser, paramsForSection } from './mapping'
+import { chooseMotif, NEUTRAL_PARAMS, paramsForSection } from './mapping'
+import { createRandom } from './random'
 import { Scene } from './scene'
 import {
   activeSectionIndex,
@@ -107,11 +108,13 @@ function App() {
     if (!audio || !canvas) return
 
     const analysis = new AudioAnalysis(audio)
-    const scene = new Scene(canvas)
-    const easer = new ParamEaser()
-    const onResize = () => scene.resize()
+    const scene = new Scene(canvas, createRandom(1337))
+    const onResize = () =>
+      scene.resize(window.innerWidth, window.innerHeight, window.devicePixelRatio || 1)
+    const onSeeking = () => scene.notifySeek()
     onResize()
     window.addEventListener('resize', onResize)
+    audio.addEventListener('seeking', onSeeking)
 
     let last = performance.now()
     let frameId = requestAnimationFrame(function tick(now) {
@@ -136,9 +139,7 @@ function App() {
           lineIndex >= 0 ? linesRef.current[lineIndex].time : null,
         )
       }
-      const params = easer.step(paramsForSection(section, emphasis), dt)
-
-      scene.draw(frame, params, dt)
+      scene.draw(frame, paramsForSection(section, emphasis), dt)
       if (debugRef.current) {
         const { motif, tag } = chooseMotif(section?.imagery ?? [])
         scene.drawDebug(frame, {
@@ -163,6 +164,7 @@ function App() {
     return () => {
       cancelAnimationFrame(frameId)
       window.removeEventListener('resize', onResize)
+      audio.removeEventListener('seeking', onSeeking)
       analysis.dispose()
     }
   }, [])

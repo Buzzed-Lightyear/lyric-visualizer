@@ -1,6 +1,16 @@
-import type { AudioFrame } from './analysis'
-import type { SceneParams } from './mapping'
-import { MOTIFS, SCENE } from './tuning'
+/**
+ * The renderer side of the seam. Receives only (AudioFrame, SceneParams,
+ * dt) plus a seek notification; manages the gradient background and the
+ * beat-committed crossfade between motif renderers. Deterministic: all
+ * randomness comes from the injected Random, size from resize(), and time
+ * from accumulated dt.
+ */
+
+import type { AudioFrame } from './audioMath'
+import { NEUTRAL_PARAMS, type Motif, type Rgb, type SceneParams } from './mapping'
+import { createRenderers, rgba, type MotifRenderer, type View } from './motifs'
+import type { Random } from './random'
+import { BG, SCENE, TRANSITION } from './tuning'
 
 /** Pre-formatted strings for the debug overlay; the scene just prints them. */
 export interface DebugInfo {
@@ -10,153 +20,223 @@ export interface DebugInfo {
   emphasis: number
 }
 
-interface Particle {
-  /** Position in 0..1 window-relative coordinates. */
-  x: number
-  y: number
-  /** Drift direction in radians. */
-  angle: number
-  /** Per-particle speed multiplier. */
-  speed: number
-  /** Radius in CSS pixels. */
-  size: number
-  /** Desynchronizes wander and twinkle between particles. */
-  phase: number
+function copyParams(p: SceneParams): SceneParams {
+  return {
+    ...p,
+    background: [...p.background],
+    glowColor: [...p.glowColor],
+    particleColor: [...p.particleColor],
+    ringColor: [...p.ringColor],
+  }
 }
 
-/**
- * The renderer side of the seam: receives only (AudioFrame, SceneParams,
- * delta time). Audio decides when things move; SceneParams decide what
- * moves, in which colors, and how much.
- */
+function mixRgb(a: Rgb, b: Rgb, t: number): Rgb {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
+}
+
+function mix(a: number, b: number, t: number): number {
+  return a + (b - a) * t
+}
+
+function smoothstep(x: number): number {
+  const t = Math.max(0, Math.min(1, x))
+  return t * t * (3 - 2 * t)
+}
+
+/** For a crossfade where both sides share a motif: blend into one params. */
+function blendParams(a: SceneParams, b: SceneParams, t: number): SceneParams {
+  return {
+    key: b.key,
+    motif: b.motif,
+    energy: mix(a.energy, b.energy, t),
+    background: mixRgb(a.background, b.background, t),
+    glowColor: mixRgb(a.glowColor, b.glowColor, t),
+    particleColor: mixRgb(a.particleColor, b.particleColor, t),
+    ringColor: mixRgb(a.ringColor, b.ringColor, t),
+    particleCount: mix(a.particleCount, b.particleCount, t),
+    speed: mix(a.speed, b.speed, t),
+    glowScale: mix(a.glowScale, b.glowScale, t),
+    jitter: mix(a.jitter, b.jitter, t),
+    lift: mix(a.lift, b.lift, t),
+    accent: mix(a.accent, b.accent, t),
+  }
+}
+
 export class Scene {
   private readonly ctx: CanvasRenderingContext2D
-  private readonly particles: Particle[] = []
   private readonly canvas: HTMLCanvasElement
-  private w = 1
-  private h = 1
+  private readonly renderers: Record<Motif, MotifRenderer>
+  private readonly view: View = { w: 1, h: 1 }
   private time = 0
+  /** Committed (outgoing) params. */
+  private current: SceneParams = copyParams(NEUTRAL_PARAMS)
+  /** Incoming params while a crossfade runs. */
+  private incoming: SceneParams | null = null
+  private fadeX = 0
+  private fadeDuration = 1
+  /** A section change waiting for its committing beat. */
+  private pending: SceneParams | null = null
+  private pendingAge = 0
+  /** Set by notifySeek: the next settle is fast and skips the beat wait. */
+  private seekSettle = false
+  /** Extra accent injected by a rising transition; decays like a beat. */
+  private boost = 0
+  /** Accumulated trail fade waiting for a flush (see SCENE.trailFlushAlpha). */
+  private fadePending = 0
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, random: Random) {
     this.canvas = canvas
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('Canvas 2D is unavailable')
     this.ctx = ctx
-    for (let i = 0; i < SCENE.maxParticles; i++) {
-      this.particles.push({
-        x: Math.random(),
-        y: Math.random(),
-        angle: Math.random() * Math.PI * 2,
-        speed: 0.5 + Math.random(),
-        size: 1 + Math.random() * 2,
-        phase: Math.random() * Math.PI * 2,
-      })
-    }
+    this.renderers = createRenderers(random)
   }
 
-  resize(): void {
-    const dpr = window.devicePixelRatio || 1
-    this.w = window.innerWidth
-    this.h = window.innerHeight
-    this.canvas.width = Math.round(this.w * dpr)
-    this.canvas.height = Math.round(this.h * dpr)
+  resize(width: number, height: number, dpr: number): void {
+    this.view.w = width
+    this.view.h = height
+    this.canvas.width = Math.round(width * dpr)
+    this.canvas.height = Math.round(height * dpr)
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     this.ctx.fillStyle = `rgba(${SCENE.backgroundRgb}, 1)`
-    this.ctx.fillRect(0, 0, this.w, this.h)
+    this.ctx.fillRect(0, 0, width, height)
   }
 
-  draw(frame: AudioFrame, params: SceneParams, dt: number): void {
-    this.time += dt
-    const { ctx, w, h } = this
-    const minDim = Math.min(w, h)
-    const [bgR, bgG, bgB] = params.background
-    // Emphasis scales how hard the audio-driven accents land.
-    const kick = Math.min(1.5, frame.beat * params.accent)
+  /** The playhead jumped: settle quickly instead of waiting for a beat. */
+  notifySeek(): void {
+    this.seekSettle = true
+  }
 
-    // Fade toward the background instead of clearing, leaving short trails.
-    ctx.globalCompositeOperation = 'source-over'
-    const fade = 1 - Math.exp(-SCENE.trailFade * dt)
-    ctx.fillStyle = `rgba(${bgR | 0}, ${bgG | 0}, ${bgB | 0}, ${fade})`
-    ctx.fillRect(0, 0, w, h)
+  /** For the harness: which params are committed, fading in, or waiting. */
+  get transitionState(): { key: string; incoming: string | null; pending: string | null } {
+    return {
+      key: this.current.key,
+      incoming: this.incoming?.key ?? null,
+      pending: this.pending?.key ?? null,
+    }
+  }
+
+  draw(frame: AudioFrame, target: SceneParams, dt: number): void {
+    this.time += dt
+    this.boost *= Math.exp(-TRANSITION.kickDecay * dt)
+    this.updateTransition(target, frame, dt)
+
+    const { ctx, view } = this
+    const x = this.incoming ? smoothstep(this.fadeX) : 0
+    const from = this.current
+    const to = this.incoming
+
+    // Background: flat for the neutral drift look, gradient + vignette for
+    // semantic sections, blended across the crossfade. Trails still work
+    // because this is the per-frame fade fill.
+    const bgColor = mixRgb(from.background, (to ?? from).background, x)
+    const bgGlow = mixRgb(from.glowColor, (to ?? from).glowColor, x)
+    const strength = mix(from.motif === 'drift' ? 0 : 1, (to ?? from).motif === 'drift' ? 0 : 1, x)
+    this.drawBackground(bgColor, bgGlow, strength, dt)
 
     ctx.globalCompositeOperation = 'lighter'
-
-    // Central glow: swells with bass, kicks on beat, breathes when idle.
-    const breath = Math.sin(this.time * SCENE.breathRate) * SCENE.breathAmount
-    const glowR =
-      minDim *
-      (SCENE.glowBase + breath + frame.bass * SCENE.glowBass + kick * SCENE.glowBeat) *
-      params.glowScale
-    const cx = w / 2
-    const cy = h / 2
-    const [glR, glG, glB] = params.glowColor
-    const glowAlpha = SCENE.glowAlphaBase + frame.bass * SCENE.glowAlphaBass
-    const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR)
-    gradient.addColorStop(0, `rgba(${glR | 0}, ${glG | 0}, ${glB | 0}, ${glowAlpha})`)
-    gradient.addColorStop(1, `rgba(${glR | 0}, ${glG | 0}, ${glB | 0}, 0)`)
-    ctx.fillStyle = gradient
-    ctx.beginPath()
-    ctx.arc(cx, cy, glowR, 0, Math.PI * 2)
-    ctx.fill()
-
-    // Beat accent: a ring that spreads and fades as the pulse decays.
-    if (frame.beat > 0.02) {
-      const [riR, riG, riB] = params.ringColor
-      const ringR = glowR * (1 + (1 - frame.beat) * SCENE.ringSpread)
-      ctx.strokeStyle = `rgba(${riR | 0}, ${riG | 0}, ${riB | 0}, ${Math.min(1, kick * SCENE.ringAlpha)})`
-      ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.arc(cx, cy, ringR, 0, Math.PI * 2)
-      ctx.stroke()
+    if (!to) {
+      this.renderers[from.motif].draw(ctx, view, frame, from, dt, 1, this.boost, this.time)
+    } else if (from.motif === to.motif) {
+      // One pass so the shared renderer doesn't advance its particles twice.
+      const blended = blendParams(from, to, x)
+      this.renderers[blended.motif].draw(ctx, view, frame, blended, dt, 1, this.boost, this.time)
+    } else {
+      this.renderers[from.motif].draw(ctx, view, frame, from, dt, 1 - x, this.boost, this.time)
+      this.renderers[to.motif].draw(ctx, view, frame, to, dt, x, this.boost, this.time)
     }
+    ctx.globalAlpha = 1
+    ctx.globalCompositeOperation = 'source-over'
+  }
 
-    // Particles. Idle floors keep them drifting through pauses and quiet
-    // songs; level, mid and high ride on top; the motif sets the character.
-    const motif = MOTIFS[params.motif]
-    const count = Math.min(this.particles.length, Math.max(0, Math.round(params.particleCount)))
-    const drive = (SCENE.idleSpeed + frame.level * SCENE.levelSpeed) * params.speed * motif.speed
-    const wander = (SCENE.wanderIdle + frame.mid * SCENE.wanderMid) * params.jitter * motif.wander
-    const biasY = motif.biasY * (0.4 + frame.level * 0.8) - params.lift * SCENE.liftBias
-    const [pR, pG, pB] = params.particleColor
-    for (let i = 0; i < count; i++) {
-      const p = this.particles[i]
-      p.angle += Math.sin(this.time * SCENE.wanderRate + p.phase) * wander * dt
-      const dx = Math.cos(p.angle) * drive * p.speed * dt
-      const dy = Math.sin(p.angle) * drive * p.speed * dt + biasY * dt
-      p.x += dx
-      p.y += dy
-      if (p.x < 0 || p.x > 1) p.x = ((p.x % 1) + 1) % 1
-      if (p.y < 0 || p.y > 1) p.y = ((p.y % 1) + 1) % 1
-
-      const twinkle = 0.5 + 0.5 * Math.sin(this.time * SCENE.twinkleRate + p.phase * 7)
-      const alpha = Math.min(
-        1,
-        SCENE.particleAlphaBase +
-          frame.level * SCENE.particleAlphaLevel +
-          twinkle * (0.1 + 0.9 * frame.high) * SCENE.particleAlphaHigh * motif.twinkle,
-      )
-      const size = p.size * motif.width * (1 + Math.min(1, kick) * SCENE.particleBeatSize)
-      const color = `rgba(${pR | 0}, ${pG | 0}, ${pB | 0}, ${alpha})`
-      const px = p.x * w
-      const py = p.y * h
-      if (motif.streak > 0) {
-        const len = Math.hypot(dx * w, dy * h) || 1
-        const trail = motif.streak * (0.6 + frame.level)
-        ctx.strokeStyle = color
-        ctx.lineWidth = size
-        ctx.beginPath()
-        ctx.moveTo(px - (dx * w * trail) / len, py - (dy * h * trail) / len)
-        ctx.lineTo(px, py)
-        ctx.stroke()
+  private updateTransition(target: SceneParams, frame: AudioFrame, dt: number): void {
+    const activeKey = this.incoming?.key ?? this.current.key
+    if (target.key === activeKey) {
+      // Same section: take live value changes (line emphasis) without a
+      // transition, and drop any pending change that got reverted.
+      if (this.incoming) this.incoming = copyParams(target)
+      else this.current = copyParams(target)
+      this.pending = null
+      this.seekSettle = false
+    } else {
+      if (this.pending?.key === target.key) {
+        this.pending = copyParams(target)
+        this.pendingAge += dt
       } else {
-        ctx.fillStyle = color
-        ctx.beginPath()
-        ctx.arc(px, py, size, 0, Math.PI * 2)
-        ctx.fill()
+        this.pending = copyParams(target)
+        this.pendingAge = 0
+      }
+      // A section change commits on the next beat, or after a short wait,
+      // or immediately when it came from a seek.
+      if (
+        this.seekSettle ||
+        frame.beat >= TRANSITION.onsetBeat ||
+        this.pendingAge >= TRANSITION.maxWaitSec
+      ) {
+        this.commit(this.pending)
       }
     }
 
-    ctx.globalCompositeOperation = 'source-over'
+    if (this.incoming) {
+      this.fadeX += dt / this.fadeDuration
+      if (this.fadeX >= 1) {
+        this.current = this.incoming
+        this.incoming = null
+        this.fadeX = 0
+      }
+    }
+  }
+
+  private commit(next: SceneParams): void {
+    // A commit mid-fade promotes the incoming side first.
+    if (this.incoming) {
+      this.current = this.incoming
+      this.incoming = null
+    }
+    const delta = next.energy - this.current.energy
+    let duration: number = TRANSITION.normalDuration
+    if (this.seekSettle) {
+      duration = TRANSITION.seekDuration
+    } else if (delta > TRANSITION.energyDelta) {
+      duration = TRANSITION.riseDuration
+      this.boost = Math.max(this.boost, TRANSITION.riseKick)
+    } else if (delta < -TRANSITION.energyDelta) {
+      duration = TRANSITION.fallDuration
+    }
+    this.incoming = next
+    this.fadeX = 0
+    this.fadeDuration = duration
+    this.pending = null
+    this.seekSettle = false
+  }
+
+  private drawBackground(bg: Rgb, glow: Rgb, strength: number, dt: number): void {
+    const { ctx } = this
+    const { w, h } = this.view
+    // Accumulate the fade and flush it at a higher alpha: a tiny per-frame
+    // alpha stalls on 8-bit rounding and leaves permanent ghost trails.
+    const frameFade = 1 - Math.exp(-SCENE.trailFade * dt)
+    this.fadePending = 1 - (1 - this.fadePending) * (1 - frameFade)
+    if (this.fadePending < SCENE.trailFlushAlpha) return
+    const fade = this.fadePending
+    this.fadePending = 0
+    const top = mixRgb(bg, [0, 0, 0], BG.topDarken * strength)
+    const bottom = mixRgb(bg, glow, BG.bottomGlowMix * strength)
+    const gradient = ctx.createLinearGradient(0, 0, 0, h)
+    gradient.addColorStop(0, rgba(top, 1))
+    gradient.addColorStop(1, rgba(bottom, 1))
+    ctx.globalAlpha = fade
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, w, h)
+    if (strength > 0.01) {
+      const r = Math.hypot(w, h) / 2
+      const vignette = ctx.createRadialGradient(w / 2, h / 2, r * 0.45, w / 2, h / 2, r)
+      vignette.addColorStop(0, 'rgba(0, 0, 0, 0)')
+      vignette.addColorStop(1, `rgba(0, 0, 0, ${BG.vignette * strength})`)
+      ctx.fillStyle = vignette
+      ctx.fillRect(0, 0, w, h)
+    }
+    ctx.globalAlpha = 1
   }
 
   /** Bars for the five AudioFrame values plus the current semantic state. */
@@ -169,11 +249,17 @@ export class Scene {
       ['high', frame.high],
       ['beat', frame.beat],
     ]
+    const fade = this.incoming
+      ? `${this.current.key} -> ${this.incoming.key} ${Math.round(smoothstep(this.fadeX) * 100)}%`
+      : this.pending
+        ? `waiting on beat -> ${this.pending.key}`
+        : '—'
     const texts = [
       `sem    ${info.semantics}`,
       `sect   ${info.section}`,
       `motif  ${info.motif}`,
       `emph   ${info.emphasis.toFixed(2)}`,
+      `trans  ${fade}`,
     ]
     const x = 12
     const y = 12
@@ -184,7 +270,7 @@ export class Scene {
 
     ctx.globalCompositeOperation = 'source-over'
     ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'
-    ctx.fillRect(x - 8, y - 8, 330, bars.length * gap + texts.length * gap + 14)
+    ctx.fillRect(x - 8, y - 8, 360, bars.length * gap + texts.length * gap + 14)
     ctx.font = '11px monospace'
     ctx.textBaseline = 'top'
     bars.forEach(([name, value], i) => {

@@ -32,16 +32,21 @@ export const BEAT = {
   pulseDecay: 5,
 } as const
 
+/** Shared scene baselines; the drift motif IS the step 2 look. */
 export const SCENE = {
   /** Neutral background; must match the page background (#080a12). */
   backgroundRgb: '8, 10, 18',
-  /** Baseline count (the step 2 look); energy scales it up to maxParticles. */
+  /** Drift particle count (the step 2 look). */
   particleCount: 140,
-  maxParticles: 240,
-  /** How strongly a mood's lift (-1..1) tilts particle drift vertically. */
-  liftBias: 0.035,
   /** Trail fade rate per second; higher = shorter trails. */
   trailFade: 3.5,
+  /**
+   * The fade is accumulated and applied only once it reaches this alpha:
+   * 8-bit rounding stalls a low-alpha fade ~0.5/alpha counts above the
+   * background, leaving permanent ghost trails. Flushing at 0.3 bounds
+   * the residue below 2 counts (invisible) at ~10 Hz fade steps.
+   */
+  trailFlushAlpha: 0.3,
   /** Particle drift, as a fraction of the window per second. */
   idleSpeed: 0.012,
   levelSpeed: 0.1,
@@ -68,26 +73,142 @@ export const SCENE = {
   /** Beat accent ring: how far it spreads and how bright it starts. */
   ringSpread: 0.9,
   ringAlpha: 0.3,
+  /** How strongly a mood's lift (-1..1) tilts particle drift vertically. */
+  liftBias: 0.035,
+} as const
+
+/** Semantic background: gradient + vignette strength (0 for neutral/drift). */
+export const BG = {
+  /** Top of the gradient: background darkened by this factor. */
+  topDarken: 0.45,
+  /** Bottom of the gradient: background mixed toward the glow color. */
+  bottomGlowMix: 0.16,
+  /** Edge darkening; 0 disables the vignette. */
+  vignette: 0.5,
+} as const
+
+export const EMBERS = {
+  count: 150,
+  /** Depth layers: far -> near multipliers. */
+  depthSpeed: [0.45, 0.7, 1],
+  depthSize: [0.5, 0.75, 1],
+  depthAlpha: [0.45, 0.7, 1],
+  /** Rise, as a fraction of the window per second, plus what level adds. */
+  riseSpeed: 0.05,
+  riseLevel: 0.1,
+  /** Horizontal sway amplitude (fraction of window) and rate (rad/s). */
+  sway: 0.02,
+  swayRate: 1.6,
+  flickerRate: 9,
+  /** Sprite size range in px (scaled by depth). */
+  sizeMin: 3,
+  sizeMax: 9,
+  alphaBase: 0.25,
+  alphaLevel: 0.55,
+  /**
+   * Heat bed along the bottom edge. NOTE: static glows accumulate ~17x
+   * under the additive trail feedback, so these alphas stay tiny.
+   */
+  bedHeight: 0.25,
+  bedAlpha: 0.02,
+  bedBass: 0.05,
+  bedKick: 0.04,
+} as const
+
+export const RAIN = {
+  count: 170,
+  depthSpeed: [0.5, 0.75, 1],
+  depthAlpha: [0.3, 0.55, 0.85],
+  depthWidth: [1, 1.4, 1.9],
+  /** Tilt from vertical, radians. */
+  tilt: 0.16,
+  /** Fall, as a fraction of the window height per second, plus level. */
+  fallSpeed: 0.5,
+  fallLevel: 0.6,
+  /** Streak length as a fraction of fall-per-second. */
+  lengthFactor: 0.09,
+  alphaLevel: 0.35,
+  alphaKick: 0.15,
+  /** Dim glow high up (static: accumulates ~17x, keep tiny). */
+  topGlowAlpha: 0.015,
+  topGlowBass: 0.025,
+  topGlowHeight: 0.4,
+} as const
+
+export const STARS = {
+  count: 210,
+  depthAlpha: [0.4, 0.65, 1],
+  depthSize: [0.5, 0.75, 1],
+  /** Horizontal parallax, fraction of window per second (near layer). */
+  parallax: 0.006,
+  /** Twinkle: rate (rad/s) and how much high opens it up. */
+  twinkleRate: 2.4,
+  twinkleBase: 0.25,
+  twinkleHigh: 0.75,
+  sizeMin: 1.5,
+  sizeMax: 4,
+  /** Every nth star is bright (bigger sprite). */
+  brightEvery: 11,
+  brightSize: 2.2,
+  /** Soft glow at the horizon (static: accumulates ~17x, keep tiny). */
+  horizonAlpha: 0.02,
+  horizonBass: 0.035,
+  horizonKick: 0.03,
+  horizonRadius: 0.65,
+} as const
+
+export const HAZE = {
+  blobCount: 12,
+  /** Blob size range, as fractions of the smaller window side. */
+  blobSizeMin: 0.2,
+  blobSizeMax: 0.42,
+  blobAlpha: 0.05,
+  blobLevel: 0.05,
+  blobKick: 0.04,
+  /** Blob wander speed, fraction of window per second. */
+  blobSpeed: 0.008,
+  /** Blurred bokeh lights. */
+  lightCount: 26,
+  lightSizeMin: 0.015,
+  lightSizeMax: 0.05,
+  lightAlpha: 0.1,
+  lightLevel: 0.25,
+  lightTwinkle: 0.3,
+  twinkleRate: 3,
+  lightSpeed: 0.012,
+} as const
+
+/** How a section change commits and crossfades. Audio decides when. */
+export const TRANSITION = {
+  /** frame.beat at/above this counts as the committing onset. */
+  onsetBeat: 0.95,
+  /** Commit anyway after this long without a beat. */
+  maxWaitSec: 0.4,
+  /** |energy delta| above this counts as a rise/fall. */
+  energyDelta: 0.15,
+  riseDuration: 0.4,
+  fallDuration: 2.5,
+  normalDuration: 1.2,
+  /** After a seek, settle this fast without waiting for a beat. */
+  seekDuration: 0.3,
+  /** Extra accent injected when a rise commits, and its decay per second. */
+  riseKick: 1,
+  kickDecay: 4,
 } as const
 
 /**
- * Motion character per motif, applied on top of the step 2 baselines.
- * speed/wander/twinkle/width are multipliers; biasY is window-fractions
- * per second (negative rises); streak > 0 draws particles as trails of
- * that many pixels.
+ * How line emphasis (via params.accent, 1 = neutral) scales the
+ * audio-driven response: each is the slope of a (1 + c * (accent - 1))
+ * multiplier, so accent 1 is always exactly the step 2 look.
  */
-export const MOTIFS = {
-  drift: { speed: 1, wander: 1, biasY: 0, twinkle: 1, streak: 0, width: 1 },
-  embers: { speed: 0.9, wander: 0.8, biasY: -0.06, twinkle: 1.8, streak: 0, width: 1 },
-  rain: { speed: 0.5, wander: 0.15, biasY: 0.3, twinkle: 0.4, streak: 10, width: 0.6 },
-  stars: { speed: 0.15, wander: 0.5, biasY: 0, twinkle: 2.2, streak: 0, width: 1 },
+export const EMPHASIS = {
+  glow: 0.5,
+  size: 0.35,
+  /** Cap on the beat kick after accent scaling. */
+  kickCap: 1.6,
 } as const
 
-export type Motif = keyof typeof MOTIFS
-
 export const MAPPING = {
-  /** SceneParams reach ~95% of a section change in 3x this, in seconds. */
-  easeTau: 0.5,
   /** Energy 0 -> AtZero, energy 1 -> AtFull (multiplied into the baselines). */
   countAtZero: 0.5,
   countAtFull: 1.6,
