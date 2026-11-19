@@ -1,7 +1,14 @@
 /**
  * The semantic schema shared by extraction (hand-written in step 3, an LLM
- * in step 4) and the mapping layer. It carries no lyric text.
+ * in step 4) and the mapping layer. It carries no lyric text: lines are
+ * identified by time, words by index.
+ *
+ * Version 2 adds optional per-line directions (focus word indices, a
+ * gesture from the fixed list, a spatial direction). Version 1 files
+ * still parse: every new field is optional.
  */
+
+import { DIRECTION_WORDS, GESTURE_NAMES, type DirectionWord, type GestureName } from './gestures'
 
 export interface SemanticSection {
   /** Seconds, inclusive. */
@@ -25,6 +32,12 @@ export interface SemanticLine {
   time: number
   /** 0..1; how hard audio accents land during this line. */
   emphasis: number
+  /** v2: 0-based indices of the one or two words that carry the line. */
+  focus?: number[]
+  /** v2: the gesture the focus words perform (needs `focus`). */
+  gesture?: GestureName
+  /** v2: spatial hint for sided gestures (needs `gesture`). */
+  direction?: DirectionWord
 }
 
 export interface Semantics {
@@ -115,10 +128,19 @@ export function parseSemantics(input: unknown): {
     }
   }
 
+  if (
+    input.version !== undefined &&
+    input.version !== 1 &&
+    input.version !== 2
+  ) {
+    errors.push(`"version" must be 1 or 2, got ${JSON.stringify(input.version)}`)
+  }
+
+  const LINE_KEYS = new Set(['time', 'emphasis', 'focus', 'gesture', 'direction'])
   const lines: SemanticLine[] = []
   if (input.lines !== undefined) {
     if (!Array.isArray(input.lines)) {
-      errors.push('"lines" must be an array of { time, emphasis }')
+      errors.push('"lines" must be an array of { time, emphasis, ... }')
     } else {
       input.lines.forEach((raw: unknown, i: number) => {
         if (!isRecord(raw) || !isTime(raw.time) || !isUnit(raw.emphasis)) {
@@ -127,7 +149,52 @@ export function parseSemantics(input: unknown): {
           )
           return
         }
-        lines.push({ time: raw.time, emphasis: raw.emphasis })
+        const where = `lines[${i}] (t=${raw.time})`
+        const before = errors.length
+        // The file must stay free of lyric text: only known fields, and
+        // words are referred to by index.
+        for (const key of Object.keys(raw)) {
+          if (!LINE_KEYS.has(key)) {
+            errors.push(`${where}: unknown field "${key}" (no lyric text in this file; words go by index)`)
+          }
+        }
+        if (raw.focus !== undefined) {
+          if (
+            !Array.isArray(raw.focus) ||
+            raw.focus.length < 1 ||
+            raw.focus.length > 2 ||
+            raw.focus.some((f: unknown) => !Number.isInteger(f) || (f as number) < 0) ||
+            new Set(raw.focus).size !== raw.focus.length
+          ) {
+            errors.push(`${where}: "focus" must be 1-2 distinct word indices >= 0`)
+          }
+        }
+        if (raw.gesture !== undefined) {
+          if (typeof raw.gesture !== 'string' || !GESTURE_NAMES.includes(raw.gesture as GestureName)) {
+            errors.push(`${where}: "gesture" must be one of ${GESTURE_NAMES.join(', ')}`)
+          } else if (raw.focus === undefined) {
+            errors.push(`${where}: "gesture" needs "focus" (the words that perform it)`)
+          }
+        }
+        if (raw.direction !== undefined) {
+          if (
+            typeof raw.direction !== 'string' ||
+            !DIRECTION_WORDS.includes(raw.direction as DirectionWord)
+          ) {
+            errors.push(`${where}: "direction" must be one of ${DIRECTION_WORDS.join(', ')}`)
+          } else if (raw.gesture === undefined) {
+            errors.push(`${where}: "direction" needs a "gesture" to apply to`)
+          }
+        }
+        if (errors.length === before) {
+          lines.push({
+            time: raw.time,
+            emphasis: raw.emphasis,
+            ...(raw.focus !== undefined ? { focus: raw.focus as number[] } : {}),
+            ...(raw.gesture !== undefined ? { gesture: raw.gesture as GestureName } : {}),
+            ...(raw.direction !== undefined ? { direction: raw.direction as DirectionWord } : {}),
+          })
+        }
       })
     }
   }
@@ -155,12 +222,48 @@ export function activeSectionIndex(sections: SemanticSection[], time: number): n
   return found >= 0 && time < sections[found].end ? found : -1
 }
 
-/** Emphasis for the lyric line starting at `lineTime`, if listed. */
-export function emphasisAt(semantics: Semantics, lineTime: number | null): number {
-  if (lineTime === null) return DEFAULT_EMPHASIS
+/** The full semantic annotation for the line starting at `lineTime`. */
+export function lineAnnotation(
+  semantics: Semantics,
+  lineTime: number | null,
+): SemanticLine | null {
+  if (lineTime === null) return null
   for (const line of semantics.lines) {
-    if (Math.abs(line.time - lineTime) < 0.05) return line.emphasis
+    if (Math.abs(line.time - lineTime) < 0.05) return line
     if (line.time > lineTime) break
   }
-  return DEFAULT_EMPHASIS
+  return null
+}
+
+/** Emphasis for the lyric line starting at `lineTime`, if listed. */
+export function emphasisAt(semantics: Semantics, lineTime: number | null): number {
+  return lineAnnotation(semantics, lineTime)?.emphasis ?? DEFAULT_EMPHASIS
+}
+
+/**
+ * Check every focus index against the real word counts (the counts come
+ * from the loaded lyrics at runtime; made-up lines in tests). Returns
+ * one readable message per out-of-range index or unmatched line.
+ */
+export function validateFocusRanges(
+  semantics: Semantics,
+  lines: readonly { time: number; wordCount: number }[],
+): string[] {
+  const errors: string[] = []
+  for (const sem of semantics.lines) {
+    if (!sem.focus) continue
+    const match = lines.find((line) => Math.abs(line.time - sem.time) < 0.05)
+    if (!match) {
+      errors.push(`line at ${sem.time}s has "focus" but no lyric line starts there`)
+      continue
+    }
+    for (const index of sem.focus) {
+      if (index >= match.wordCount) {
+        errors.push(
+          `line at ${sem.time}s: focus index ${index} out of range (the line has ${match.wordCount} words)`,
+        )
+      }
+    }
+  }
+  return errors
 }

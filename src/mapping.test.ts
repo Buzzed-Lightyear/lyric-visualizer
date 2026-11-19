@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { chooseMotif, ENTRANCE_LADDER, entranceForLine, exitForLine, layoutForLine, NEUTRAL_PARAMS, paramsForSection, textParamsForLine } from './mapping'
+import {
+  chooseMotif,
+  ENTRANCE_LADDER,
+  layoutForLine,
+  NEUTRAL_PARAMS,
+  paramsForSection,
+  sectionGrammar,
+  textParamsForLine,
+} from './mapping'
 import type { SemanticSection } from './semantics'
 
 const section = (over: Partial<SemanticSection> = {}): SemanticSection => ({
@@ -81,68 +89,76 @@ describe('paramsForSection', () => {
   })
 })
 
-describe('textParamsForLine (mood -> hold & voice, deterministic parts)', () => {
-  it('maps moods to hold and voice', () => {
-    const menacing = textParamsForLine(section({ mood: 'menacing' }), 0.5, 10, null)
-    expect(menacing.hold).toBe('jolt')
-    expect(menacing.voice).toBe('condensed')
-    const mournful = textParamsForLine(section({ mood: 'mournful' }), 0.5, 10, null)
-    expect(mournful.hold).toBe('bob')
-    expect(mournful.voice).toBe('whisper')
+describe('sectionGrammar (one base motion per section)', () => {
+  it('derives everything from mood and energy, deterministically', () => {
+    const s = section({ mood: 'menacing', energy: 0.8 })
+    expect(sectionGrammar(s)).toEqual(sectionGrammar(s))
+    const g = sectionGrammar(s)
+    expect(g.hold).toBe('jolt')
+    expect(g.voice).toBe('condensed')
+    expect(g.anchor).toBe('low')
+    expect(g.exit).toBe('tumble')
   })
 
-  it('falls back to the default for unknown moods and no section', () => {
-    expect(textParamsForLine(section({ mood: 'zorblax' }), 0.5, 10, null).hold).toBe('bob')
-    expect(textParamsForLine(null, 0.5, 10, null).voice).toBe('air')
+  it('picks the entrance from the energy ladder, calm to violent', () => {
+    expect(sectionGrammar(section({ energy: 0 })).entrance).toBe(ENTRANCE_LADDER[0])
+    expect(sectionGrammar(section({ energy: 1 })).entrance).toBe(
+      ENTRANCE_LADDER[ENTRANCE_LADDER.length - 1],
+    )
+  })
+
+  it('maps moods to anchors', () => {
+    expect(sectionGrammar(section({ mood: 'tense' })).anchor).toBe('upperLeft')
+    expect(sectionGrammar(section({ mood: 'hollow' })).anchor).toBe('upperLeft')
+    expect(sectionGrammar(section({ mood: 'weary' })).anchor).toBe('low')
+    expect(sectionGrammar(section({ mood: 'mournful' })).anchor).toBe('center')
+    expect(sectionGrammar(section({ mood: 'zorblax' })).anchor).toBe('center')
+  })
+
+  it('falls back to the default grammar without a section', () => {
+    const g = sectionGrammar(null)
+    expect(g.voice).toBe('air')
+    expect(g.hold).toBe('bob')
+    expect(g.anchor).toBe('center')
+  })
+})
+
+describe('textParamsForLine (section grammar + line meaning)', () => {
+  it('gives every line of a section the same base motion', () => {
+    const s = section({ mood: 'furious', energy: 0.9 })
+    const a = textParamsForLine(s, 0.5)
+    const b = textParamsForLine(s, 0.6)
+    expect(a.entrance).toBe(b.entrance)
+    expect(a.hold).toBe(b.hold)
+    expect(a.exit).toBe(b.exit)
+    expect(a.voice).toBe(b.voice)
+    expect(a.anchor).toBe(b.anchor)
   })
 
   it('switches to the accent voice at high emphasis', () => {
-    const base = textParamsForLine(section({ mood: 'furious' }), 0.5, 10, null)
-    const hot = textParamsForLine(section({ mood: 'furious' }), 0.9, 10, null)
+    const base = textParamsForLine(section({ mood: 'furious' }), 0.5)
+    const hot = textParamsForLine(section({ mood: 'furious' }), 0.9)
     expect(base.voice).toBe('block')
     expect(hot.voice).toBe('marker')
   })
 
-  it('is deterministic: the same line always gets the same parts', () => {
-    const a = textParamsForLine(section(), 0.7, 42.5, 39.1)
-    const b = textParamsForLine(section(), 0.7, 42.5, 39.1)
-    expect(a).toEqual(b)
-  })
-})
-
-describe('entranceForLine (energy ladder)', () => {
-  it('is calm at low energy and violent at high', () => {
-    const calmSet = new Set<string>()
-    const hotSet = new Set<string>()
-    for (let t = 0; t < 40; t += 1.7) {
-      calmSet.add(entranceForLine(0, t, null))
-      hotSet.add(entranceForLine(1, t, null))
-    }
-    const calmSide = ENTRANCE_LADDER.slice(0, 3)
-    const hotSide = ENTRANCE_LADDER.slice(-3)
-    for (const pick of calmSet) expect(calmSide).toContain(pick)
-    for (const pick of hotSet) expect(hotSide).toContain(pick)
+  it('honors a refrain grammar override and carries focus and gestures', () => {
+    const s = section({ mood: 'calm', energy: 0.2 })
+    const sourceGrammar = sectionGrammar(section({ mood: 'menacing', energy: 0.8 }))
+    const p = textParamsForLine(s, 0.5, {
+      grammar: sourceGrammar,
+      focus: [1, 3],
+      gestures: [{ index: 1, gesture: 'fall', dir: null, source: 'direction' }],
+    })
+    expect(p.entrance).toBe(sourceGrammar.entrance)
+    expect(p.hold).toBe('jolt')
+    expect(p.focus).toEqual([1, 3])
+    expect(p.gestures[0].gesture).toBe('fall')
   })
 
-  it('avoids repeating the previous line\'s entrance', () => {
-    for (let t = 1; t < 60; t += 2.3) {
-      const prev = t - 2.3
-      const prevPick = entranceForLine(0.5, prev, null)
-      // Re-derive what this line would pick given the previous line.
-      const pick = entranceForLine(0.5, t, prev)
-      if (entranceForLine(0.5, t, null) === prevPick) {
-        expect(pick).not.toBe(prevPick)
-      }
-    }
-  })
-})
-
-describe('exitForLine and layoutForLine (emphasis brackets)', () => {
-  it('uses shatter or knock at the top, sink or blow at the bottom', () => {
-    expect(['shatter', 'knock']).toContain(exitForLine(0.9, 'bob', 10))
-    expect(['sink', 'blow']).toContain(exitForLine(0.2, 'bob', 10))
-    expect(exitForLine(0.5, 'bob', 10)).toBe('liftOff') // the hold's default
-    expect(exitForLine(0.5, 'rest', 10)).toBe('collapse')
+  it('falls back to the default for unknown moods and no section', () => {
+    expect(textParamsForLine(section({ mood: 'zorblax' }), 0.5).hold).toBe('bob')
+    expect(textParamsForLine(null, 0.5).voice).toBe('air')
   })
 
   it('maps emphasis to layout brackets', () => {

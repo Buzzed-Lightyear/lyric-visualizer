@@ -5,8 +5,15 @@ import { SectionCommitter } from './committer'
 import { drawDebug } from './debug'
 import { createKnobs, type Knobs } from './knobs'
 import { LAYOUT_NAMES } from './layout'
+import { buildChoreo, lineWords, type LineChoreo } from './choreo'
 import { activeLineIndex, parseLrc, type LyricLine } from './lrc'
-import { chooseMotif, paramsForSection, textParamsForLine } from './mapping'
+import {
+  chooseMotif,
+  paramsForSection,
+  sectionGrammar,
+  textParamsForLine,
+  type LineMotion,
+} from './mapping'
 import {
   COMBO_NAMES,
   COMBOS,
@@ -31,6 +38,7 @@ import {
   DEFAULT_EMPHASIS,
   emphasisAt,
   parseSemantics,
+  validateFocusRanges,
   type Semantics,
   type SemanticSection,
 } from './semantics'
@@ -77,6 +85,8 @@ function App() {
   const showLyricsRef = useRef(true)
   const physicsTextRef = useRef(true)
   const overridesRef = useRef<PartOverrides>({})
+  const choreoRef = useRef<LineChoreo[]>([])
+  const gesturesOnRef = useRef(true)
   const feedbackRef = useRef<Feedback>({
     chosen: { ...(feedbackJson as Feedback).chosen },
     banned: [...(feedbackJson as Feedback).banned],
@@ -128,6 +138,23 @@ function App() {
     if (pick?.chosen) backgroundRef.current?.loadByName(pick.chosen, blendSec)
   }
 
+  // Grammar, focus, gestures and refrains per lyric line; rebuilt when
+  // either the lyrics or the semantics arrive.
+  const rebuildChoreo = () => {
+    choreoRef.current = buildChoreo(linesRef.current, semanticsRef.current)
+    const semantics = semanticsRef.current
+    if (semantics && linesRef.current.length > 0) {
+      const problems = validateFocusRanges(
+        semantics,
+        linesRef.current.map((line) => ({
+          time: line.time,
+          wordCount: lineWords(line.text).length,
+        })),
+      )
+      for (const problem of problems) console.error(`semantics focus: ${problem}`)
+    }
+  }
+
   useEffect(() => {
     const knobs = createKnobs({
       resetPresetFeedback: () => {
@@ -169,6 +196,7 @@ function App() {
         if (cancelled) return
         const parsed = parseLrc(text)
         linesRef.current = parsed
+        rebuildChoreo()
         setLines(parsed)
       })
       .catch(() => {
@@ -200,6 +228,7 @@ function App() {
         if (cancelled) return
         semanticsRef.current = semantics
         recomputePicks()
+        rebuildChoreo()
         setSemanticsErrors(errors.length)
       })
       .catch(() => {})
@@ -228,6 +257,7 @@ function App() {
         })
       }
       if (key === 'b') backgroundRef.current?.cycleMode()
+      if (key === 'g') gesturesOnRef.current = !gesturesOnRef.current
       if (event.key === ']' || event.key === '[') {
         const label = committedRef.current.section?.label ?? 'neutral'
         const pick = picksRef.current.get(label)
@@ -380,9 +410,23 @@ function App() {
       // Text layer (plus scrim/tint, which it always draws).
       const committedSection = committedRef.current.section
       const lyrics = linesRef.current
-      const lineStart = lineIndex >= 0 ? lyrics[lineIndex].time : null
-      const prevLineStart = lineIndex > 0 ? lyrics[lineIndex - 1].time : null
-      const textParams = textParamsForLine(committedSection, emphasis, lineStart, prevLineStart)
+      // The base grammar follows the beat-committed section; a refrain
+      // keeps its source line's grammar. G drops focus and gestures.
+      const choreo = lineIndex >= 0 ? choreoRef.current[lineIndex] : undefined
+      let motion: LineMotion = {}
+      if (semantics && choreo) {
+        motion = gesturesOnRef.current
+          ? {
+              grammar:
+                choreo.refrainOf !== null
+                  ? choreo.grammar
+                  : sectionGrammar(committedSection),
+              focus: choreo.focus,
+              gestures: choreo.gestures,
+            }
+          : { grammar: sectionGrammar(committedSection) }
+      }
+      const textParams = textParamsForLine(committedSection, emphasis, motion)
       const line =
         physicsTextRef.current && showLyricsRef.current && lineIndex >= 0
           ? {
@@ -413,8 +457,18 @@ function App() {
           `bg     ${mode}  ·  ${background.currentPreset}${pick?.fromFeedback ? ' (saved)' : ''}`,
           `pick   ${entry ? entry.description.slice(0, 58) : '(not in catalog)'}`,
           `why    ${pick?.reasons.join(' · ') || '—'}  ·  next ${(pick?.runnerUp ?? '—').slice(0, 26)}`,
-          `text   ${physicsTextRef.current ? 'physics' : 'dom line'}  ·  voice ${eff(o.voice, textParams.voice)}  ·  layout ${eff(o.layout, textParams.layout)}`,
-          `parts  in ${eff(o.entrance, textParams.entrance)}  ·  hold ${eff(o.hold, textParams.hold)}  ·  out ${eff(o.exit, textParams.exit)}`,
+          `text   ${physicsTextRef.current ? 'physics' : 'dom line'}  ·  voice ${eff(o.voice, textParams.voice)}  ·  layout ${eff(o.layout, textParams.layout)}  ·  anchor ${textParams.anchor}`,
+          `base   in ${eff(o.entrance, textParams.entrance)}  ·  hold ${eff(o.hold, textParams.hold)}  ·  out ${eff(o.exit, textParams.exit)}`,
+          `gest   ${(() => {
+            if (!gesturesOnRef.current) return 'off (G)'
+            if (!choreo) return '(no line)'
+            const bits: string[] = []
+            if (choreo.refrainOf !== null) bits.push(`refrain of line ${choreo.refrainOf + 1}`)
+            if (choreo.focus.length > 0) bits.push(`focus ${choreo.focus.join(',')}`)
+            for (const g of choreo.gestures)
+              bits.push(`${g.gesture}@${g.index} (${g.source === 'direction' ? 'directed' : 'lexicon'})`)
+            return bits.length > 0 ? bits.join('  ·  ') : 'base motion only'
+          })()}`,
         ])
       }
       setActiveIndex(lineIndex)
@@ -475,9 +529,9 @@ function App() {
         )}
         {toast && <p className="toast">{toast.text}</p>}
         <p className="hint">
-          L lyrics · T text mode · B bg · [ ] candidate · {'{ }'} browse ·
-          N ban · E/H/X parts · F voice · Y layout · 1-5/0 combos · D debug ·
-          S semantics · K knobs
+          L lyrics · T text mode · B bg · G gestures · [ ] candidate ·{' '}
+          {'{ }'} browse · N ban · E/H/X parts · F voice · Y layout · 1-5/0
+          combos · D debug · S semantics · K knobs
         </p>
       </main>
     </>

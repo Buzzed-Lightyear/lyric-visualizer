@@ -36,6 +36,15 @@ export const THRESHOLDS = {
   /** Measurement slack for the text legibility rules (src/tuning.ts LEGIBILITY). */
   legibilityEpsPx: 2,
   legibilityEpsDeg: 0.5,
+  /** The debug overlay must render identically on a polluted context
+   * (max per-channel pixel difference). */
+  debugOverlayMaxDiff: 0,
+  /** Type specimen: word gaps must match the voice's word space (px). */
+  wordGapEpsPx: 1.5,
+  /** ...slots must stay inside the safe margins (px of slack). */
+  marginEpsPx: 2,
+  /** ...wrapped rows must be balanced: narrowest / widest at least this. */
+  rowBalanceMin: 0.45,
   /** Butterchurn smoke: minimum luminance stddev of a rendered frame. */
   butterchurnMinStdDev: 2,
   /**

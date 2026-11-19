@@ -13,6 +13,8 @@ const GROUPS: Record<string, Record<string, unknown>> = {
   analysis: TUNING.ANALYSIS,
   beat: TUNING.BEAT,
   text: TUNING.TEXT,
+  typeset: TUNING.TYPESET,
+  gestures: TUNING.GESTURE_T,
   legibility: TUNING.LEGIBILITY,
   butterchurn: TUNING.BUTTERCHURN,
   assist: TUNING.ASSIST,

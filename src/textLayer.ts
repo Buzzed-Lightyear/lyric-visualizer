@@ -9,7 +9,8 @@
  */
 
 import type { AudioFrame } from './audioMath'
-import { focusFeasible, LAYOUTS, type LayoutName } from './layout'
+import { GESTURES, type GestureAssignment } from './gestures'
+import { focusFeasible, LAYOUTS, type AnchorName, type LayoutName } from './layout'
 import type { Rgb, TextParams } from './mapping'
 import { rgba } from './motifs'
 import { estimateWordOnsets } from './onsets'
@@ -18,15 +19,17 @@ import {
   EXITS,
   HOLDS,
   sharedForces,
+  type Entrance,
   type EntranceName,
   type ExitMotion,
   type ExitName,
+  type Hold,
   type HoldName,
 } from './parts'
 import type { Random } from './random'
 import { advance, newBody, type Body, type Forces, type Home, type SpringConfig } from './springs'
-import { ASSIST, EXIT_T, HOLD_T, LEGIBILITY, TEXT } from './tuning'
-import { allFontsLoaded, fontString, VOICES, type VoiceName } from './voices'
+import { ASSIST, EXIT_T, GESTURE_T, HOLD_T, LEGIBILITY, TEXT, TYPESET } from './tuning'
+import { allFontsLoaded, fontString, makeMeasure, typeStyleFor, VOICES, type VoiceName } from './voices'
 
 export interface TextLine {
   index: number
@@ -67,6 +70,8 @@ interface Letter {
 
 interface Word {
   text: string
+  /** Index in the original line's words. */
+  index: number
   slotX: number
   slotY: number
   wPx: number
@@ -77,6 +82,10 @@ interface Word {
   body: Body
   home: Home
   letters: Letter[] | null
+  /** Hierarchy focus word: larger, heavier. */
+  focusWord: boolean
+  /** The gesture this word performs, or null for the base motion. */
+  gesture: GestureAssignment | null
   /** Focus layout: when this word hands over to the next. */
   focusExitAt: number | null
   /** Focus hand-over fade started at. */
@@ -92,8 +101,21 @@ interface LineParts {
   exit: ExitName
   voice: VoiceName
   layout: LayoutName
+  anchor: AnchorName
   fill: Rgb
   accent: Rgb
+}
+
+/** The parts one word actually runs: the line's, or its gesture's. */
+interface WordParts {
+  entrance: Entrance
+  hold: Hold
+  holdName: HoldName
+  force: number
+  strength: number
+  scaleBias: number
+  letterSpread: number
+  echo: number
 }
 
 interface OutWord {
@@ -229,8 +251,37 @@ export class TextLayer {
       exit: o.exit ?? this.parts.exit,
       voice: o.voice ?? this.parts.voice,
       layout: this.parts.layout, // layout is fixed at build
+      anchor: this.parts.anchor,
       fill: this.parts.fill,
       accent: this.parts.accent,
+    }
+  }
+
+  /** Resolve one word's parts: its gesture's recipe, or the line's. */
+  private wordParts(word: Word, parts: LineParts): WordParts {
+    const g = word.gesture
+    if (!g) {
+      return {
+        entrance: ENTRANCES[parts.entrance],
+        hold: HOLDS[parts.hold],
+        holdName: parts.hold,
+        force: 1,
+        strength: 1,
+        scaleBias: 1,
+        letterSpread: 1,
+        echo: 0,
+      }
+    }
+    const recipe = GESTURES[g.gesture]
+    return {
+      entrance: ENTRANCES[recipe.entrance],
+      hold: HOLDS[recipe.hold],
+      holdName: recipe.hold,
+      force: recipe.force * GESTURE_T.force,
+      strength: recipe.strength * GESTURE_T.strength,
+      scaleBias: recipe.scaleBias,
+      letterSpread: recipe.letterSpread,
+      echo: recipe.echo,
     }
   }
 
@@ -257,14 +308,21 @@ export class TextLayer {
     if (raw.length === 0) return
     const texts = raw.map((word) => (voice.caps ? word.toUpperCase() : word))
     const { w, h } = this.view
-    const measure = (text: string, size: number): number => {
-      this.setFont(voiceName, size)
-      return this.ctx.measureText(text).width
-    }
+    const measure = makeMeasure(this.ctx, voiceName)
+    const style = typeStyleFor(this.ctx, voiceName)
     const onsets = estimateWordOnsets(texts, line.start, line.end - line.start)
     let layout = o.layout ?? params.layout
     if (layout === 'focus' && !focusFeasible(onsets, line.end)) layout = 'centered'
-    const { slots } = LAYOUTS[layout](texts, w, h, measure, params.sizeScale)
+    const { slots } = LAYOUTS[layout]({
+      words: texts,
+      viewW: w,
+      viewH: h,
+      measure,
+      style,
+      sizeScale: params.sizeScale,
+      focus: params.focus,
+      anchor: params.anchor,
+    })
 
     this.parts = {
       entrance: params.entrance,
@@ -272,6 +330,7 @@ export class TextLayer {
       exit: params.exit,
       voice: voiceName,
       layout,
+      anchor: params.anchor,
       fill: params.fill,
       accent: params.accent,
     }
@@ -280,18 +339,23 @@ export class TextLayer {
       const y = slot.y / h
       this.words.push({
         text: slot.text,
+        index: slot.index,
         slotX: x,
         slotY: y,
         wPx: slot.w,
         fontSize: slot.h,
-        onset: onsets[i],
+        onset: onsets[slot.index],
         phase: this.rng() * Math.PI * 2,
         entered: false,
         body: newBody(x, y),
         home: { x, y, rot: 0, scale: 1 },
         letters: null,
+        focusWord: slot.focus,
+        gesture: params.gestures.find((g) => g.index === slot.index) ?? null,
         focusExitAt:
-          layout === 'focus' ? (i + 1 < onsets.length ? onsets[i + 1] : null) : null,
+          layout === 'focus'
+            ? (i + 1 < slots.length ? onsets[slots[i + 1].index] : null)
+            : null,
         exitedAt: null,
         squash: 0,
         prevX: x,
@@ -300,7 +364,7 @@ export class TextLayer {
     })
   }
 
-  private ensureLetters(word: Word, voiceName: VoiceName): Letter[] {
+  private ensureLetters(word: Word, voiceName: VoiceName, spread = 1): Letter[] {
     if (word.letters) return word.letters
     const { w } = this.view
     const chars = [...word.text]
@@ -311,7 +375,7 @@ export class TextLayer {
     const total = widths.reduce((a, b) => a + b, 0)
     let cursor = -total / 2
     word.letters = chars.map((char, i) => {
-      const dxPx = cursor + widths[i] / 2
+      const dxPx = (cursor + widths[i] / 2) * spread
       cursor += widths[i]
       const x = word.slotX + dxPx / w
       const y = word.slotY
@@ -357,9 +421,7 @@ export class TextLayer {
   ): void {
     const params = input.params
     const time = input.time
-    const entrance = ENTRANCES[parts.entrance]
-    const hold = HOLDS[parts.hold]
-    const strength = 0.5 + params.emphasis
+    const baseStrength = 0.5 + params.emphasis
 
     for (const word of this.words) {
       // Focus hand-over: the word fades out when the next one arrives.
@@ -368,11 +430,16 @@ export class TextLayer {
       }
       if (word.exitedAt !== null) continue
 
+      const wp = this.wordParts(word, parts)
+      const { entrance, hold } = wp
+      const strength = baseStrength * wp.strength
+      const letterwise = hold.letterwise || wp.letterSpread !== 1
+
       if (!word.entered) {
         if (time < word.onset) continue
         word.entered = true
-        if (entrance.letterwise || hold.letterwise) {
-          const letters = this.ensureLetters(word, parts.voice)
+        if (entrance.letterwise || letterwise) {
+          const letters = this.ensureLetters(word, parts.voice, wp.letterSpread)
           if (entrance.letterwise) {
             letters.forEach((letter, i) => {
               entrance.init(letter.body, letter.home.x, letter.home.y, this.rng, strength)
@@ -383,6 +450,7 @@ export class TextLayer {
             // entrance offset and move the letters as a coherent unit.
             const probe = newBody(word.slotX, word.slotY)
             entrance.init(probe, word.slotX, word.slotY, this.rng, strength)
+            this.applyDirection(probe, word)
             for (const letter of letters) {
               letter.body.x = letter.home.x + (probe.x - word.slotX)
               letter.body.y = letter.home.y + (probe.y - word.slotY)
@@ -395,27 +463,29 @@ export class TextLayer {
           }
         } else {
           entrance.init(word.body, word.slotX, word.slotY, this.rng, strength)
+          this.applyDirection(word.body, word)
         }
       }
 
       const letterMode =
-        (entrance.letterwise && time < word.onset + entrance.duration) || hold.letterwise
+        (entrance.letterwise && time < word.onset + entrance.duration) || letterwise
       const assist = this.assistWeight(time, word.onset)
       const spring = this.effectiveSpring(hold.spring(), assist)
       const floor = hold.floor?.(word.slotY)
+      const restScale = (1 + frame.bass * TEXT.bassScale) * wp.scaleBias
 
       if (letterMode && word.letters) {
         word.letters.forEach((letter, index) => {
           if (time < word.onset + letter.delay) return
           const f = this.resetForces()
           hold.forces(f, frame, time, word.phase + index * 0.7, index)
-          if (parts.hold === 'wave') {
+          if (wp.holdName === 'wave') {
             f.ay *= 1 + this.waveBoost
           }
           sharedForces(f, frame, time, word.phase + index)
-          this.scaleForces(f, params.forceScale)
+          this.scaleForces(f, params.forceScale * wp.force)
           if (beatOnset) hold.onBeat(letter.body, this.rng, params.forceScale * strength)
-          letter.home.scale = 1 + frame.bass * TEXT.bassScale
+          letter.home.scale = restScale
           advance(letter.body, letter.home, spring, f, dt)
         })
         // Keep the word body parked on its slot for mode hand-over.
@@ -425,9 +495,10 @@ export class TextLayer {
         const f = this.resetForces()
         hold.forces(f, frame, time, word.phase, 0)
         sharedForces(f, frame, time, word.phase)
-        this.scaleForces(f, params.forceScale)
+        this.driftBias(f, word)
+        this.scaleForces(f, params.forceScale * wp.force)
         if (beatOnset) hold.onBeat(word.body, this.rng, params.forceScale * strength)
-        word.home.scale = 1 + frame.bass * TEXT.bassScale
+        word.home.scale = restScale
         word.prevX = word.body.x
         word.prevY = word.body.y
         const impact = advance(word.body, word.home, spring, f, dt, floor)
@@ -437,6 +508,33 @@ export class TextLayer {
       }
       word.squash *= Math.exp(-8 * dt)
     }
+  }
+
+  /** Honor the line's `direction` on a sided gesture's entrance. */
+  private applyDirection(b: Body, word: Word): void {
+    const g = word.gesture
+    if (!g?.dir || !GESTURES[g.gesture].sided) return
+    if (g.dir === 'left' || g.dir === 'right') {
+      // Enter from the opposite side, moving the named way.
+      const side = g.dir === 'left' ? 1 : -1
+      if (b.x !== word.slotX || b.vx !== 0) {
+        b.x = word.slotX + side * Math.abs(b.x - word.slotX)
+        b.vx = -side * Math.abs(b.vx)
+      }
+    } else {
+      const up = g.dir === 'up' ? -1 : 1
+      b.vy += up * 0.06
+    }
+  }
+
+  /** A sided gesture with an up/down direction leans that way. */
+  private driftBias(f: Forces, word: Word): void {
+    const g = word.gesture
+    if (!g?.dir || !GESTURES[g.gesture].sided) return
+    if (g.dir === 'up') f.ay -= GESTURE_T.directionBias
+    if (g.dir === 'down') f.ay += GESTURE_T.directionBias
+    if (g.dir === 'left') f.ax -= GESTURE_T.directionBias * 0.3
+    if (g.dir === 'right') f.ax += GESTURE_T.directionBias * 0.3
   }
 
   private resetForces(): Forces {
@@ -468,12 +566,20 @@ export class TextLayer {
       1,
       newSlots,
     )
+    // A lingering word outstays its line's exit.
+    oldWords.forEach((word, i) => {
+      motions[i].delay += this.lingerOf(word)
+    })
     this.outgoing = {
       words: oldWords.map((word, i) => ({ word, motion: motions[i] })),
       parts,
       start: time,
       snap: exit.snap === true,
     }
+  }
+
+  private lingerOf(word: Word): number {
+    return word.gesture ? GESTURES[word.gesture.gesture].lingerSec : 0
   }
 
   private shatterWords(words: Word[], parts: LineParts, time: number): void {
@@ -496,7 +602,7 @@ export class TextLayer {
           fontSize: word.fontSize,
           voice: parts.voice,
           fill: parts.fill,
-          start: time,
+          start: time + this.lingerOf(word),
         })
       })
     }
@@ -537,7 +643,8 @@ export class TextLayer {
     const S = EXIT_T.shatter
     this.shatter = this.shatter.filter((l) => {
       const elapsed = time - l.start
-      if (elapsed < 0 || elapsed > S.fadeSec) return false
+      if (elapsed > S.fadeSec) return false
+      if (elapsed < 0) return true // waiting (a lingering word)
       l.vy += S.gravity * dt
       l.x += l.vx * dt
       l.y += l.vy * dt
@@ -553,7 +660,6 @@ export class TextLayer {
     this.words.forEach((word, i) => {
       if (word.entered && word.exitedAt === null && word.onset <= time) active = i
     })
-    const entrance = ENTRANCES[parts.entrance]
     this.words.forEach((word, i) => {
       if (!word.entered) return
       let alpha = 1
@@ -561,11 +667,14 @@ export class TextLayer {
         alpha = 1 - (time - word.exitedAt) / FOCUS_FADE_SEC
         if (alpha <= 0) return
       }
+      const wp = this.wordParts(word, parts)
       const fill = i === active ? parts.accent : parts.fill
+      const bold = word.focusWord ? TYPESET.focusBold : 0
       const letterMode =
-        (entrance.letterwise && time < word.onset + entrance.duration) ||
-        HOLDS[parts.hold].letterwise
-      const deform = entrance.deform ? entrance.deform(time - word.onset) : null
+        (wp.entrance.letterwise && time < word.onset + wp.entrance.duration) ||
+        wp.hold.letterwise ||
+        wp.letterSpread !== 1
+      const deform = wp.entrance.deform ? wp.entrance.deform(time - word.onset) : null
       if (letterMode && word.letters) {
         for (const letter of word.letters) {
           if (time < word.onset + letter.delay) continue
@@ -573,14 +682,18 @@ export class TextLayer {
             pivot: false,
             deform: null,
             squash: 0,
+            bold,
+            echo: wp.echo,
           })
         }
       } else {
         this.drawGlyph(word.text, word.body, word.fontSize, parts.voice, fill, alpha, {
-          pivot: parts.hold === 'pendulum',
+          pivot: wp.holdName === 'pendulum',
           deform,
           squash: word.squash,
           ghostFrom: { x: word.prevX, y: word.prevY },
+          bold,
+          echo: wp.echo,
         })
       }
     })
@@ -606,7 +719,7 @@ export class TextLayer {
   private drawShatter(time: number): void {
     const S = EXIT_T.shatter
     for (const l of this.shatter) {
-      const alpha = Math.max(0, 1 - (time - l.start) / S.fadeSec)
+      const alpha = Math.min(1, Math.max(0, 1 - (time - l.start) / S.fadeSec))
       const body = { x: l.x, y: l.y, vx: l.vx, vy: l.vy, rot: l.rot, vrot: l.vrot, scale: 1, vscale: 0 }
       this.drawGlyph(l.char, body, l.fontSize, l.voice, l.fill, alpha, {
         pivot: false,
@@ -628,6 +741,8 @@ export class TextLayer {
       deform: number | null
       squash: number
       ghostFrom?: { x: number; y: number }
+      bold?: number
+      echo?: number
     },
   ): void {
     if (!this.fontsReady) {
@@ -637,6 +752,9 @@ export class TextLayer {
     const { ctx } = this
     const { w, h } = this.view
     const speed = Math.hypot(b.vx, b.vy)
+    // The measured width excludes the trailing letter-space; shift the
+    // drawn box by half of it so the ink itself is centered.
+    const inkShift = (VOICES[voiceName].tracking * fontSize) / 2
 
     // Optional ghost trails at high speed (off by default).
     if (TEXT.ghostTrails > 0 && speed > TEXT.ghostMinSpeed && opts.ghostFrom) {
@@ -654,7 +772,26 @@ export class TextLayer {
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
         ctx.fillStyle = rgba(fill, alpha * a * TEXT.ghostTrails)
-        ctx.fillText(text, 0, 0)
+        ctx.fillText(text, inkShift, 0)
+        ctx.restore()
+      }
+    }
+
+    // Echo gesture: expanding rings behind the word.
+    if (opts.echo && opts.echo > 0) {
+      for (const [grow, a] of [
+        [1.18, 0.28],
+        [1.4, 0.12],
+      ]) {
+        ctx.save()
+        ctx.translate(b.x * w, b.y * h)
+        ctx.rotate(b.rot)
+        ctx.scale(b.scale * grow, b.scale * grow)
+        this.setFont(voiceName, fontSize)
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillStyle = rgba(fill, alpha * a * opts.echo)
+        ctx.fillText(text, inkShift, 0)
         ctx.restore()
       }
     }
@@ -692,7 +829,14 @@ export class TextLayer {
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillStyle = rgba(fill, alpha)
-    ctx.fillText(text, 0, 0)
+    // Focus words are set heavier: a same-color stroke fattens the face.
+    if (opts.bold && opts.bold > 0) {
+      ctx.strokeStyle = rgba(fill, alpha)
+      ctx.lineWidth = opts.bold * fontSize
+      ctx.lineJoin = 'round'
+      ctx.strokeText(text, inkShift, 0)
+    }
+    ctx.fillText(text, inkShift, 0)
     ctx.restore()
   }
 

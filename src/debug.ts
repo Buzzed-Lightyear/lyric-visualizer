@@ -2,6 +2,36 @@
 
 import type { AudioFrame } from './audioMath'
 
+type TextCtx = CanvasRenderingContext2D & {
+  letterSpacing: string
+  wordSpacing: string
+  fontKerning: CanvasFontKerning
+  direction: CanvasDirection
+}
+
+/**
+ * The overlay shares the text layer's canvas, whose context carries
+ * voice-specific state (letterSpacing above all: inherited, it stretches
+ * the overlay with wide-tracked voices). Reset every piece of inherited
+ * text and paint state; the harness renders the overlay on a clean and a
+ * polluted context and requires identical pixels.
+ */
+function resetTextState(ctx: TextCtx): void {
+  ctx.globalAlpha = 1
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.filter = 'none'
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetX = 0
+  ctx.shadowOffsetY = 0
+  ctx.shadowColor = 'rgba(0, 0, 0, 0)'
+  ctx.letterSpacing = '0px'
+  ctx.wordSpacing = '0px'
+  ctx.fontKerning = 'auto'
+  ctx.direction = 'ltr'
+  ctx.lineWidth = 1
+  ctx.lineJoin = 'miter'
+}
+
 export function drawDebug(
   ctx: CanvasRenderingContext2D,
   frame: AudioFrame,
@@ -22,9 +52,9 @@ export function drawDebug(
   const gap = 18
 
   ctx.save()
-  ctx.globalCompositeOperation = 'source-over'
+  resetTextState(ctx as TextCtx)
   ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
-  ctx.fillRect(x - 8, y - 8, 460, bars.length * gap + lines.length * gap + 14)
+  ctx.fillRect(x - 8, y - 8, 560, bars.length * gap + lines.length * gap + 14)
   ctx.font = '11px monospace'
   ctx.textAlign = 'left'
   ctx.textBaseline = 'top'

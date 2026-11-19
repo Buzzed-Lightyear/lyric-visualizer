@@ -5,7 +5,8 @@
  * and how much. One hardcoded mapping; presets and seeds are step 5.
  */
 
-import type { LayoutName } from './layout'
+import type { GestureAssignment } from './gestures'
+import type { AnchorName, LayoutName } from './layout'
 import type { EntranceName, ExitName, HoldName } from './parts'
 import type { SemanticSection } from './semantics'
 import { MAPPING, SCENE, TEXT } from './tuning'
@@ -125,6 +126,12 @@ export interface TextParams {
   hold: HoldName
   exit: ExitName
   layout: LayoutName
+  /** The section's block anchor. */
+  anchor: AnchorName
+  /** Word indices set larger and heavier (hierarchy). */
+  focus: number[]
+  /** Gestures performed by single words, starting at their onsets. */
+  gestures: GestureAssignment[]
   fill: Rgb
   accent: Rgb
   tint: Rgb
@@ -142,22 +149,23 @@ interface MoodText {
   voice: VoiceName
   /** Lines at high emphasis may switch to this voice. */
   accentVoice: VoiceName
+  anchor: AnchorName
 }
 
-const DEFAULT_TEXT: MoodText = { hold: 'bob', voice: 'air', accentVoice: 'marker' }
+const DEFAULT_TEXT: MoodText = { hold: 'bob', voice: 'air', accentVoice: 'marker', anchor: 'center' }
 
-/** Mood -> hold part and type voice. Unknown moods get the default. */
+/** Mood -> hold part, type voice and block anchor. Unknown moods get the default. */
 const MOOD_TEXT: Record<string, MoodText> = {
-  calm: { hold: 'bob', voice: 'air', accentVoice: 'condensed' },
-  mournful: { hold: 'bob', voice: 'whisper', accentVoice: 'condensed' },
-  suspended: { hold: 'still', voice: 'air', accentVoice: 'condensed' },
-  tense: { hold: 'tremble', voice: 'mono', accentVoice: 'marker' },
-  menacing: { hold: 'jolt', voice: 'condensed', accentVoice: 'marker' },
-  furious: { hold: 'jolt', voice: 'block', accentVoice: 'marker' },
-  weary: { hold: 'pendulum', voice: 'slab', accentVoice: 'marker' },
-  grieving: { hold: 'still', voice: 'serif', accentVoice: 'condensed' },
-  brooding: { hold: 'pendulum', voice: 'serif', accentVoice: 'marker' },
-  hollow: { hold: 'still', voice: 'mono', accentVoice: 'condensed' },
+  calm: { hold: 'bob', voice: 'air', accentVoice: 'condensed', anchor: 'center' },
+  mournful: { hold: 'bob', voice: 'whisper', accentVoice: 'condensed', anchor: 'center' },
+  suspended: { hold: 'still', voice: 'air', accentVoice: 'condensed', anchor: 'center' },
+  tense: { hold: 'tremble', voice: 'mono', accentVoice: 'marker', anchor: 'upperLeft' },
+  menacing: { hold: 'jolt', voice: 'condensed', accentVoice: 'marker', anchor: 'low' },
+  furious: { hold: 'jolt', voice: 'block', accentVoice: 'marker', anchor: 'center' },
+  weary: { hold: 'pendulum', voice: 'slab', accentVoice: 'marker', anchor: 'low' },
+  grieving: { hold: 'still', voice: 'serif', accentVoice: 'condensed', anchor: 'center' },
+  brooding: { hold: 'pendulum', voice: 'serif', accentVoice: 'marker', anchor: 'low' },
+  hollow: { hold: 'still', voice: 'mono', accentVoice: 'condensed', anchor: 'upperLeft' },
 }
 
 /** The four background axes a mood maps onto (all 0..1). */
@@ -197,7 +205,7 @@ export const ENTRANCE_LADDER: EntranceName[] = [
   'unfold', 'buoy', 'pop', 'creep', 'hang', 'assemble', 'fall', 'fling', 'whip', 'slam',
 ]
 
-/** Each hold's natural exit, for mid-emphasis lines. */
+/** Each hold's natural exit: the section's one way out. */
 const DEFAULT_EXIT: Record<HoldName, ExitName> = {
   jolt: 'tumble',
   rest: 'collapse',
@@ -209,39 +217,32 @@ const DEFAULT_EXIT: Record<HoldName, ExitName> = {
   still: 'sink',
 }
 
-function lineHash(lineStart: number): number {
-  return (Math.abs(Math.round(lineStart * 100)) * 2654435761) >>> 0
-}
-
 /**
- * Energy picks a 3-wide window on the ladder (calmer at low energy,
- * violent at high); the line's hash picks within it, shifting once if
- * the previous line would have landed on the same entrance.
+ * The section's base motion: one entrance, hold, exit, voice and anchor,
+ * from mood and energy, fixed for the whole section. Motion changes only
+ * when meaning changes — nothing here varies per line.
  */
-export function entranceForLine(
-  energy: number,
-  lineStart: number | null,
-  prevLineStart: number | null,
-): EntranceName {
-  const n = ENTRANCE_LADDER.length
-  const center = Math.round(Math.max(0, Math.min(1, energy)) * (n - 1))
-  const lo = Math.max(0, Math.min(n - 3, center - 1))
-  const window = ENTRANCE_LADDER.slice(lo, lo + 3)
-  if (lineStart === null) return window[1]
-  const pick = (t: number) => window[lineHash(t) % 3]
-  let choice = pick(lineStart)
-  if (prevLineStart !== null && pick(prevLineStart) === choice) {
-    choice = window[(lineHash(lineStart) + 1) % 3]
-  }
-  return choice
+export interface SectionGrammar {
+  entrance: EntranceName
+  hold: HoldName
+  exit: ExitName
+  voice: VoiceName
+  accentVoice: VoiceName
+  anchor: AnchorName
 }
 
-/** Emphasis -> exit: shatter/knock at the top, sink/blow at the bottom. */
-export function exitForLine(emphasis: number, hold: HoldName, lineStart: number | null): ExitName {
-  const hash = lineHash(lineStart ?? 0)
-  if (emphasis >= TEXT.shatterEmphasis) return hash % 2 === 0 ? 'shatter' : 'knock'
-  if (emphasis <= 0.3) return hash % 2 === 0 ? 'sink' : 'blow'
-  return DEFAULT_EXIT[hold]
+export function sectionGrammar(section: SemanticSection | null): SectionGrammar {
+  const style = section ? (MOOD_TEXT[section.mood.toLowerCase()] ?? DEFAULT_TEXT) : DEFAULT_TEXT
+  const energy = Math.max(0, Math.min(1, section?.energy ?? 0.5))
+  const entrance = ENTRANCE_LADDER[Math.round(energy * (ENTRANCE_LADDER.length - 1))]
+  return {
+    entrance,
+    hold: style.hold,
+    exit: DEFAULT_EXIT[style.hold],
+    voice: style.voice,
+    accentVoice: style.accentVoice,
+    anchor: style.anchor,
+  }
 }
 
 /** Emphasis -> layout. Focus still needs the pace gate in the layer. */
@@ -255,25 +256,36 @@ const NEUTRAL_FILL: Rgb = [232, 238, 248]
 const NEUTRAL_ACCENT: Rgb = [255, 180, 90]
 const NEUTRAL_TINT: Rgb = [255, 148, 64]
 
+/** Per-line choreography: the base grammar (a refrain reuses its source
+ * line's), plus the focus words and the gestures they perform. */
+export interface LineMotion {
+  grammar?: SectionGrammar
+  focus?: readonly number[]
+  gestures?: readonly GestureAssignment[]
+}
+
 /**
- * Pure and deterministic: the same section, emphasis and line always
- * produce the same parts. `prevLineStart` only breaks entrance repeats.
+ * Pure and deterministic: the same section, emphasis and motion always
+ * produce the same params. The grammar is fixed per section; only the
+ * line's own meaning (emphasis, focus, gestures) varies.
  */
 export function textParamsForLine(
   section: SemanticSection | null,
   emphasis: number,
-  lineStart: number | null,
-  prevLineStart: number | null,
+  motion: LineMotion = {},
 ): TextParams {
-  const style = section ? (MOOD_TEXT[section.mood.toLowerCase()] ?? DEFAULT_TEXT) : DEFAULT_TEXT
+  const grammar = motion.grammar ?? sectionGrammar(section)
   const energy = section?.energy ?? 0.5
   const palette = section?.palette.map(hexToRgb)
   return {
-    voice: emphasis >= TEXT.shatterEmphasis ? style.accentVoice : style.voice,
-    entrance: entranceForLine(energy, lineStart, prevLineStart),
-    hold: style.hold,
-    exit: exitForLine(emphasis, style.hold, lineStart),
+    voice: emphasis >= TEXT.shatterEmphasis ? grammar.accentVoice : grammar.voice,
+    entrance: grammar.entrance,
+    hold: grammar.hold,
+    exit: grammar.exit,
     layout: layoutForLine(emphasis),
+    anchor: grammar.anchor,
+    focus: [...(motion.focus ?? [])],
+    gestures: [...(motion.gestures ?? [])],
     fill: palette?.[2] ?? NEUTRAL_FILL,
     accent: palette?.[3] ?? palette?.[1] ?? NEUTRAL_ACCENT,
     tint: palette?.[1] ?? NEUTRAL_TINT,

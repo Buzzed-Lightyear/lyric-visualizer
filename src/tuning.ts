@@ -216,11 +216,6 @@ export const TEXT = {
   baseSizeFrac: 0.07,
   minSizeFrac: 0.025,
   maxWidthFrac: 0.88,
-  rowGap: 1.2,
-  /** Word spacing as a fraction of the font size. */
-  wordSpaceFrac: 0.33,
-  /** Vertical center of the text block, as a fraction of the height. */
-  centerY: 0.42,
   /** Dark scrim and palette tint between background and text. */
   scrimBase: 0.22,
   scrimEmphasis: 0.3,
@@ -247,6 +242,67 @@ export const TEXT = {
   /** Focus layout gate: max words/second, min readable time per word. */
   focusMaxPace: 3,
   focusMinWordSec: 0.25,
+}
+
+/**
+ * Typesetting: spacing, leading, wrapping, anchors and hierarchy. Word
+ * space and leading are derived from each font's own metrics (space
+ * advance, ascent + descent); these knobs scale that, they never replace
+ * it.
+ */
+export const TYPESET = {
+  /** Cap-height normalization target in ems: a voice whose measured cap
+   * height differs is size-adjusted so equal nominal sizes look equal. */
+  capTarget: 0.72,
+  /** Leading as a multiple of the font's (ascent + descent). */
+  leading: 1.02,
+  /** All-caps voices have no descenders in play, so they sit tighter
+   * (but never tighter than the no-overlap legibility rule allows). */
+  leadingCaps: 0.92,
+  /** Lines are scaled so the widest row lands near this view-width fraction:
+   * short lines scale up toward it, long lines scale down. */
+  targetWidthFrac: 0.6,
+  /** Cap on the fitted font size, as a fraction of the smaller view side. */
+  maxSizeFrac: 0.15,
+  /** Safe margins, fractions of the view. */
+  marginX: 0.06,
+  marginTop: 0.09,
+  marginBottom: 0.11,
+  /** A lone last-row word under this fraction of the widest row is an
+   * orphan; such wraps are rejected. */
+  orphanFrac: 0.5,
+  /** Wrap cost for breaking mid-phrase (same scale as raggedness). */
+  phrasePenalty: 0.05,
+  /** Wrap cost per extra row: prefers fewer rows when balance ties. */
+  rowPenalty: 0.015,
+  /** Hierarchy: focus words grow, the rest shrink. */
+  focusSize: 1.45,
+  restSize: 0.85,
+  /** Faux-bold stroke on focus words, in ems ("larger AND heavier"). */
+  focusBold: 0.022,
+  /** Anchor positions, fractions of the view. */
+  centerY: 0.42,
+  lowY: 0.72,
+  upperLeftX: 0.1,
+  upperLeftY: 0.22,
+}
+
+/** Gesture strengths (recipes over the existing parts; see gestures.ts). */
+export const GESTURE_T = {
+  /** Extra entrance strength for a word performing a gesture. */
+  strength: 1.2,
+  /** Force multiplier while a gesture hold runs. */
+  force: 1.1,
+  swellScale: 1.2,
+  shrinkScale: 0.78,
+  /** Letter home spread for `apart` (multiplies letter offsets). */
+  apartSpread: 1.5,
+  /** Echo ring strength (0..1). */
+  echoStrength: 0.6,
+  /** How long a `linger` word outstays its line's exit, seconds. */
+  lingerSec: 1.0,
+  /** Constant drift bias when a `direction` is given, window frac / s^2. */
+  directionBias: 0.05,
 }
 
 export const PHYSICS = {

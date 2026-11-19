@@ -12,7 +12,9 @@ import '@fontsource/inter/300.css'
 import butterchurnModule from 'butterchurn'
 import type { AudioFrame } from './audioMath'
 import { unwrapButterchurn } from './background'
-import { LAYOUT_NAMES } from './layout'
+import { drawDebug } from './debug'
+import { GESTURE_NAMES } from './gestures'
+import { LAYOUT_NAMES, LAYOUTS, type LayoutName } from './layout'
 import { chooseMotif, NEUTRAL_PARAMS, paramsForSection, type SceneParams, type TextParams } from './mapping'
 import { ENTRANCE_NAMES, EXIT_NAMES, HOLD_NAMES } from './parts'
 import { loadAllPresets } from './presetPacks'
@@ -27,8 +29,15 @@ import {
 } from './semantics'
 import { fontGate, TextLayer, type PartOverrides } from './textLayer'
 import { THRESHOLDS } from './thresholds'
-import { LEGIBILITY } from './tuning'
-import { loadAllFonts, VOICE_NAMES } from './voices'
+import { LEGIBILITY, TYPESET } from './tuning'
+import {
+  loadAllFonts,
+  makeMeasure,
+  typeStyleFor,
+  VOICE_NAMES,
+  VOICES,
+  type VoiceName,
+} from './voices'
 
 const W = 1280
 const H = 720
@@ -350,6 +359,9 @@ function fakeTextParams(emphasis: number): TextParams {
     hold: 'still',
     exit: 'blow',
     layout: 'centered',
+    anchor: 'center',
+    focus: [],
+    gestures: [],
     fill: [235, 240, 250],
     accent: [255, 180, 90],
     tint: [60, 80, 140],
@@ -402,11 +414,12 @@ function runTextSim(
   captureAt: number[],
   switchAt = 2.4,
   total = 3.4,
+  extra: Partial<TextParams> = {},
 ): TextSimResult {
   const canvas = document.createElement('canvas')
   const layer = new TextLayer(canvas, createRandom(SEED))
   layer.resize(W, H, 1)
-  const params = fakeTextParams(emphasis)
+  const params = { ...fakeTextParams(emphasis), ...extra }
   const lineA = { index: 0, text: FAKE_LINE_A, start: 0, end: switchAt }
   const lineB = { index: 1, text: FAKE_LINE_B, start: switchAt, end: switchAt * 2 }
   const result: TextSimResult = {
@@ -525,6 +538,162 @@ function sweepCombinations(): Check[] {
       threshold: '0 and 0',
     },
   ]
+}
+
+// --- typesetting checks ------------------------------------------------------
+
+/** Made-up lines only; lyric text never enters the repo. */
+const SPECIMEN_LINE = 'FAKE KINETIC WORDS HERE'
+const WRAP_LINE = 'invented words keep marching over the bright, empty screen tonight'
+
+/**
+ * Measure the layouts directly with the real fonts: word gaps equal the
+ * voice's word space, slots stay inside the margins, wrapped rows are
+ * balanced with no orphan last row.
+ */
+function typesetChecks(): Check[] {
+  const ctx = document.createElement('canvas').getContext('2d')!
+  let worstGap = 0
+  let worstGapWhere = ''
+  let worstMargin = 0
+  let worstMarginWhere = ''
+  let worstBalance = 1
+  let worstBalanceWhere = ''
+  let orphans = 0
+  let wrapped = 0
+
+  const layoutFor = (voice: VoiceName, layout: LayoutName, text: string) => {
+    const caps = VOICES[voice].caps
+    const words = text.split(/\s+/).map((word) => (caps ? word.toUpperCase() : word))
+    return LAYOUTS[layout]({
+      words,
+      viewW: W,
+      viewH: H,
+      measure: makeMeasure(ctx, voice),
+      style: typeStyleFor(ctx, voice),
+      sizeScale: 1,
+      focus: [],
+      anchor: 'center',
+    })
+  }
+
+  for (const voice of VOICE_NAMES) {
+    const style = typeStyleFor(ctx, voice)
+    for (const layout of ['centered', 'lockup'] as LayoutName[]) {
+      const { slots } = layoutFor(voice, layout, SPECIMEN_LINE)
+      for (let i = 1; i < slots.length; i++) {
+        const a = slots[i - 1]
+        const b = slots[i]
+        if (a.row !== b.row) continue
+        const gap = b.x - b.w / 2 - (a.x + a.w / 2)
+        const err = Math.abs(gap - style.wordSpaceFrac * a.h)
+        if (err > worstGap) {
+          worstGap = err
+          worstGapWhere = `${voice}/${layout}`
+        }
+      }
+      for (const slot of slots) {
+        const over = Math.max(
+          W * TYPESET.marginX - (slot.x - slot.w / 2),
+          slot.x + slot.w / 2 - W * (1 - TYPESET.marginX),
+          H * TYPESET.marginTop - (slot.y - slot.h * 0.45),
+          slot.y + slot.h * 0.6 - H * (1 - TYPESET.marginBottom),
+        )
+        if (over > worstMargin) {
+          worstMargin = over
+          worstMarginWhere = `${voice}/${layout}`
+        }
+      }
+    }
+    const { slots, rows } = layoutFor(voice, 'centered', WRAP_LINE)
+    if (rows >= 2) {
+      wrapped++
+      const widths: number[] = []
+      const counts: number[] = []
+      for (let r = 0; r < rows; r++) {
+        const rowSlots = slots.filter((slot) => slot.row === r)
+        counts.push(rowSlots.length)
+        const first = rowSlots[0]
+        const last = rowSlots[rowSlots.length - 1]
+        widths.push(last.x + last.w / 2 - (first.x - first.w / 2))
+      }
+      const widest = Math.max(...widths)
+      const ratio = Math.min(...widths) / widest
+      if (ratio < worstBalance) {
+        worstBalance = ratio
+        worstBalanceWhere = voice
+      }
+      if (counts[rows - 1] === 1 && widths[rows - 1] < TYPESET.orphanFrac * widest) orphans++
+    }
+  }
+
+  const T = THRESHOLDS
+  return [
+    {
+      name: 'specimen word gaps match each voice word space',
+      pass: worstGap <= T.wordGapEpsPx,
+      value: `worst ${worstGap.toFixed(2)}px (${worstGapWhere})`,
+      threshold: `<= ${T.wordGapEpsPx}px`,
+    },
+    {
+      name: 'specimen slots stay inside the safe margins',
+      pass: worstMargin <= T.marginEpsPx,
+      value: `worst overrun ${worstMargin.toFixed(2)}px (${worstMarginWhere})`,
+      threshold: `<= ${T.marginEpsPx}px`,
+    },
+    {
+      name: `wrapped rows balanced, no orphans (${wrapped} voices wrap)`,
+      pass: wrapped > 0 && worstBalance >= T.rowBalanceMin && orphans === 0,
+      value: `worst balance ${worstBalance.toFixed(2)} (${worstBalanceWhere}), orphans ${orphans}`,
+      threshold: `balance >= ${T.rowBalanceMin}, 0 orphans`,
+    },
+  ]
+}
+
+/** The overlay must render identically on a deliberately polluted ctx. */
+function debugOverlayCheck(): Check {
+  const render = (pollute: boolean): ImageData => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 600
+    canvas.height = 260
+    const ctx = canvas.getContext('2d')! as CanvasRenderingContext2D & {
+      letterSpacing: string
+      wordSpacing: string
+    }
+    if (pollute) {
+      ctx.font = 'italic 64px serif'
+      ctx.letterSpacing = '24px'
+      ctx.wordSpacing = '31px'
+      ctx.textAlign = 'right'
+      ctx.textBaseline = 'bottom'
+      ctx.globalAlpha = 0.35
+      ctx.globalCompositeOperation = 'lighter'
+      ctx.shadowColor = '#f00'
+      ctx.shadowBlur = 12
+      ctx.shadowOffsetX = 6
+      ctx.fillStyle = '#123456'
+      ctx.lineWidth = 9
+      ctx.direction = 'rtl'
+    }
+    drawDebug(
+      ctx,
+      { level: 0.5, bass: 0.7, mid: 0.4, high: 0.3, beat: 1 },
+      ['made-up status line for width', 'wide WWWW thin iiii 0.00'],
+    )
+    return ctx.getImageData(0, 0, 600, 260)
+  }
+  const clean = render(false)
+  const polluted = render(true)
+  let maxDiff = 0
+  for (let i = 0; i < clean.data.length; i++) {
+    maxDiff = Math.max(maxDiff, Math.abs(clean.data[i] - polluted.data[i]))
+  }
+  return {
+    name: 'debug overlay immune to inherited canvas state',
+    pass: maxDiff <= THRESHOLDS.debugOverlayMaxDiff,
+    value: `max channel diff ${maxDiff}`,
+    threshold: `<= ${THRESHOLDS.debugOverlayMaxDiff}`,
+  }
 }
 
 /** Butterchurn smoke: with an oscillator source, frames are not blank. */
@@ -842,10 +1011,34 @@ async function run(): Promise<Report> {
   await loadAllFonts()
   await document.fonts.ready
   const textStrips: TextStrip[] = []
-  const film = (name: string, overrides: PartOverrides, captureAt: number[], emphasis = 0.6) => {
-    const r = runTextSim(overrides, emphasis, true, captureAt)
+  const film = (
+    name: string,
+    overrides: PartOverrides,
+    captureAt: number[],
+    emphasis = 0.6,
+    extra: Partial<TextParams> = {},
+  ) => {
+    const r = runTextSim(overrides, emphasis, true, captureAt, 2.4, 3.4, extra)
     textStrips.push({ name, frames: r.frames })
     return r
+  }
+  // The type specimen: every voice x every layout on the same made-up
+  // line, with a focus word to show the hierarchy.
+  for (const voice of VOICE_NAMES) {
+    const frames: HTMLCanvasElement[] = []
+    for (const layout of LAYOUT_NAMES) {
+      const r = runTextSim(
+        { entrance: 'creep', hold: 'still', exit: 'blow', voice, layout },
+        0.6,
+        true,
+        [1.6],
+        2.4,
+        2.0,
+        { focus: [2] },
+      )
+      frames.push(...r.frames)
+    }
+    textStrips.push({ name: `specimen: ${voice} (centered · lockup · focus)`, frames })
   }
   for (const entrance of ENTRANCE_NAMES) {
     film(`entrance: ${entrance}`, { entrance, hold: 'still', exit: 'blow' }, [0.12, 0.4, 1.9])
@@ -862,8 +1055,20 @@ async function run(): Promise<Report> {
   for (const layout of LAYOUT_NAMES) {
     film(`layout: ${layout}`, { entrance: 'creep', hold: 'still', exit: 'blow', layout }, [0.6, 1.3, 1.9])
   }
+  // One filmstrip per gesture, performed by word 2 of the made-up line.
+  for (const gesture of GESTURE_NAMES) {
+    film(
+      `gesture: ${gesture}`,
+      { entrance: 'creep', hold: 'still', exit: 'blow' },
+      [1.0, 1.7, 2.6],
+      0.6,
+      { focus: [2], gestures: [{ index: 2, gesture, dir: null, source: 'direction' }] },
+    )
+  }
 
   checks.push(...sweepCombinations())
+  checks.push(...typesetChecks())
+  checks.push(debugOverlayCheck())
   checks.push({
     name: 'no text drawn before fonts were ready',
     pass: fontGate.violations === 0,

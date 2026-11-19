@@ -51,13 +51,17 @@ To use different file names, change the constants in `src/App.tsx`.
   (top 8); the choice is saved for that section label
 - `N`: never show this preset again, then move to the next candidate
 - `Shift+[` / `Shift+]`: browse the whole catalog (not saved)
+- `G`: toggle gestures and focus words off and on (A/B against the pure
+  section base motion)
 - `E` / `H` / `X`: cycle the entrance / hold / exit part
 - `F`: cycle the type voice; `Y`: cycle the layout
 - `1`-`5`: force one of the original five combinations (slam, drop,
   float, tremble, swing); `0` returns everything to the mood mapping
 - `D`: debug overlay — analysis bars, section, committed key, emphasis,
-  background mode + preset name, and the current voice, layout,
-  entrance, hold and exit (with forced overrides marked)
+  background mode + preset name, the section's base motion (entrance,
+  hold, exit, voice, anchor; forced overrides marked), and per line the
+  focus indices, each gesture with whether it came from a direction or
+  the lexicon, and refrain reuse
 - `S`: toggle semantics on/off (off reproduces the step 2 look, for A/B)
 - `K`: tuning panel (Tweakpane) — live sliders for every numeric knob in
   `src/tuning.ts`, grouped by module. Edits apply on the next frame and
@@ -103,37 +107,99 @@ and optional ghost trails (text › ghostTrails, off by default).
 
 ### Type voices
 
-Named voices (family, weight, case, tracking, italic), all OFL via
-Fontsource, loaded before the first frame: block (Archivo Black), air
-(Inter Light), condensed (Anton), serif (Playfair Display), whisper
-(Cormorant Garamond italic), mono (Space Mono), marker (Permanent
-Marker), slab (Alfa Slab One).
+Named voices (family, weight, case, tracking, italic, word-space
+factor), all OFL via Fontsource, loaded before the first frame: block
+(Archivo Black), air (Inter Light), condensed (Anton), serif (Playfair
+Display), whisper (Cormorant Garamond italic), mono (Space Mono),
+marker (Permanent Marker), slab (Alfa Slab One).
 
-### Layouts
+### Typesetting
 
-centered (wrapped rows), lockup (each row scaled to one block width),
-focus (one word at a time, large — only when the estimated pace is at or
-under 3 words/s with every word readable for 0.25 s, else it falls back
-to centered).
+All spacing derives from each font's own measured metrics
+(`src/voices.ts` measures them, `src/layout.ts` is pure math over them):
 
-### Mapping
+- **Word space** is the font's space advance times a per-voice factor
+  (`VOICES[...].wordSpace`), plus the tracking — never a flat em
+  fraction. A word's measured width excludes its trailing letter-space,
+  so gaps and centering are optically even (the drawn glyph is shifted
+  half a letter-space to recenter the ink).
+- **Leading** comes from the font's real ascent + descent, times
+  `typeset › leading` (`leadingCaps` for all-caps voices, which sit
+  tighter).
+- **Cap-height normalization**: each voice is size-adjusted so the same
+  nominal size shows the same cap height (`typeset › capTarget`).
+- **Balanced wrapping**: all partitions into up to 3 rows are scored for
+  raggedness; a lone short word on the last row (an orphan) is rejected,
+  and breaks at phrase boundaries (after punctuation, before
+  conjunctions, prepositions and articles) are preferred
+  (`phrasePenalty`, `rowPenalty`, `orphanFrac`).
+- **Scale to target**: the fewest rows whose fitted size reaches the
+  base size win; the widest row is scaled toward `targetWidthFrac` of
+  the view — short lines scale up, long lines scale down — capped by
+  `maxSizeFrac` and the safe margins (`marginX/Top/Bottom`) on every
+  side.
+- **Anchors**: three block positions — center, lower third, upper left
+  (`centerY`, `lowY`, `upperLeftX/Y`). Each section uses one anchor for
+  its whole length, from its mood.
+- **Hierarchy**: focus words are set larger (`focusSize`) and heavier
+  (`focusBold`, a same-color stroke), the rest smaller (`restSize`); the
+  word space next to a bigger word follows the bigger size. In lockup a
+  focus word gets its own row.
 
-Mood -> hold + voice (+ an accent voice for lines with emphasis >= 0.85).
-Energy -> entrance (calm at low energy, violent at high), varied
-deterministically per line so consecutive lines differ. Emphasis ->
-size, layout (focus at the top, lockup in the middle) and exit (shatter
-or knock at the top, sink or blow at the bottom, else the hold's
-default).
+Layouts: centered (balanced wrapped rows), lockup (each row scaled to
+one block width), focus (one word at a time, large — only when the
+estimated pace is at or under 3 words/s with every word readable for
+0.25 s, else it falls back to centered).
+
+### Meaningful motion
+
+Motion changes only when meaning changes:
+
+- **Section grammar**: each section has one base entrance (from energy,
+  calm to violent on the ladder), hold + voice + anchor (from mood) and
+  exit (the hold's natural one), fixed for the whole section. Nothing
+  varies per line for variety's sake.
+- **Refrains**: a line whose words repeat an earlier line (exact, a
+  shorter reprise, or cut off mid-word with `-`) reuses that line's
+  choreography exactly — grammar, focus and gesture — wherever it sits
+  in the song (`src/choreo.ts`).
+- **Directions** (semantics v2): a line may name `focus` word indices,
+  a `gesture` from the fixed list, and an optional spatial `direction`.
+  Focus words perform the gesture from their estimated onsets; all
+  other words follow the section's base motion.
+- **Lexicon fallback**: when a line has no direction, a ~45-stem English
+  table (`src/gestures.ts` LEXICON, with inflection and g-dropping
+  handling) puts the matched gesture on the matching word (at most two
+  per line).
+- Emphasis still scales strength, size, scrim and layout (focus at the
+  top, lockup in the middle), and switches to the accent voice at
+  >= 0.85. Audio still drives all ongoing forces.
+
+### Gestures
+
+Each is a recipe over the existing parts (no new physics): fall
+(fall/rest, heavy landing), rise (buoy/bob), strike (slam/jolt), break
+(arrives in shuddering pieces), drift (loose, barely held), tremble,
+swell (grows past rest size), shrink (dwindles, goes still), rush
+(whips in at speed; honors `direction`), halt (whips in and freezes),
+apart (the letters pull apart and stay apart), together (letters fly in
+and lock), echo (pulses with expanding ghost rings), hang
+(hang/pendulum), linger (outstays its line's exit). Strengths live in
+`tuning.ts` GESTURE_T.
 
 **Word onsets are an estimate**: the LRC is line-timed, so words are
 spread across the first ~70% of each line's duration (capped), weighted
 by word length (src/onsets.ts). Real word timing would need alignment
 tooling, which is out of scope.
 
-The harness films every entrance, hold, exit, voice and layout, sweeps
-all entrance x hold x exit combinations by introspection (no drawing)
-against the legibility rules, and checks that no frame ever drew text
-before the fonts were ready.
+The harness renders a type specimen (every voice x every layout on the
+same made-up line, with a focus word) and measures word gaps, margins,
+row balance and orphans against `src/thresholds.ts`; films every
+entrance, hold, exit, voice, layout and gesture; sweeps all entrance x
+hold x exit combinations by introspection (no drawing) against the
+legibility rules; verifies the debug overlay renders identically on a
+deliberately polluted canvas context; and checks that no frame ever
+drew text before the fonts were ready.
 
 ## Background preset catalog
 
@@ -170,6 +236,7 @@ button in the K panel).
 
 ```json
 {
+  "version": 2,
   "sections": [
     {
       "start": 42.08, "end": 59.59,
@@ -178,7 +245,10 @@ button in the K panel).
       "imagery": ["embers", "gunmetal", "sirens"]
     }
   ],
-  "lines": [{ "time": 42.08, "emphasis": 0.9 }]
+  "lines": [
+    { "time": 42.08, "emphasis": 0.9,
+      "focus": [1, 7], "gesture": "strike", "direction": "down" }
+  ]
 }
 ```
 
@@ -197,9 +267,22 @@ button in the K panel).
   **drift** (the step 2 look, used only for neutral).
 - `lines` map an LRC start time to emphasis 0..1: how hard beat accents
   land during that line. Unlisted lines default to 0.5.
+- Version 2 adds optional per-line directions; the file still contains
+  **no lyric text** — words go by 0-based index:
+  - `focus`: 1-2 distinct indices of the words that carry the line
+    (set larger and heavier; they perform the gesture).
+  - `gesture`: one of fall, rise, strike, break, drift, tremble, swell,
+    shrink, rush, halt, apart, together, echo, hang, linger (needs
+    `focus`).
+  - `direction`: left / right / up / down, a spatial hint for sided
+    gestures (needs `gesture`).
+  - Unknown line fields are rejected so lyric text can never slip in;
+    focus indices are range-checked against the loaded lyrics at
+    runtime (console errors, `validateFocusRanges`).
 
 The file is validated on load; problems are listed in the console and the
-scene runs neutral.
+scene runs neutral. Version 1 files (no `version`, no line extras) still
+parse.
 
 ## Status
 
