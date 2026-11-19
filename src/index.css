@@ -1,0 +1,19 @@
+/* Baseline only. Real visuals start in step 2. */
+:root {
+  color-scheme: light dark;
+  font: 16px/1.5 system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+audio {
+  width: 100%;
+}
