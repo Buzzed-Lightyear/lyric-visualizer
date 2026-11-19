@@ -25,7 +25,7 @@ committed. To use a different file name or format, change `AUDIO_SRC` in
 
 Done when the current lyric line shows at the right moment.
 
-- [ ] 1. Scaffold and play: the song plays in the browser
+- [x] 1. Scaffold and play: the song plays in the browser
 - [ ] 2. Parse LRC into sorted `{ time, text }[]`
 - [ ] 3. Find the active line for a given time
 - [ ] 4. Wire to the playback clock with `requestAnimationFrame`
