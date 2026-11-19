@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chooseMotif, NEUTRAL_PARAMS, paramsForSection } from './mapping'
+import { chooseMotif, NEUTRAL_PARAMS, paramsForSection, textParamsForSection } from './mapping'
 import type { SemanticSection } from './semantics'
 
 const section = (over: Partial<SemanticSection> = {}): SemanticSection => ({
@@ -78,5 +78,42 @@ describe('paramsForSection', () => {
     const p = paramsForSection(section({ mood: 'zorblax' }), 0.5)
     expect(p.jitter).toBe(1)
     expect(p.lift).toBe(0)
+  })
+})
+
+describe('textParamsForSection (mood mapping)', () => {
+  it('maps moods to behavior and type style', () => {
+    const menacing = textParamsForSection(section({ mood: 'menacing' }), 0.5)
+    expect(menacing.behavior).toBe('slam')
+    expect(menacing.heavy).toBe(true)
+    expect(menacing.caps).toBe(true)
+    const mournful = textParamsForSection(section({ mood: 'mournful' }), 0.5)
+    expect(mournful.behavior).toBe('float')
+    expect(mournful.heavy).toBe(false)
+  })
+
+  it('falls back to the default style for unknown moods and no section', () => {
+    expect(textParamsForSection(section({ mood: 'zorblax' }), 0.5).behavior).toBe('float')
+    expect(textParamsForSection(null, 0.5).behavior).toBe('float')
+  })
+
+  it('maps the palette to fill, accent and tint', () => {
+    const p = textParamsForSection(section(), 0.5)
+    expect(p.fill).toEqual([160, 176, 192])
+    expect(p.accent).toEqual([255, 255, 255])
+    expect(p.tint).toEqual([255, 128, 64])
+  })
+
+  it('scales force with energy and size/scrim with emphasis', () => {
+    const low = textParamsForSection(section({ energy: 0.2 }), 0.3)
+    const high = textParamsForSection(section({ energy: 0.9 }), 0.9)
+    expect(high.forceScale).toBeGreaterThan(low.forceScale)
+    expect(high.sizeScale).toBeGreaterThan(low.sizeScale)
+    expect(high.scrim).toBeGreaterThan(low.scrim)
+  })
+
+  it('flags a shatter exit at high emphasis only', () => {
+    expect(textParamsForSection(section(), 0.9).shatterExit).toBe(true)
+    expect(textParamsForSection(section(), 0.5).shatterExit).toBe(false)
   })
 })

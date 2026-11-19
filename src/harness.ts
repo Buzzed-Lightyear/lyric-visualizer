@@ -7,8 +7,14 @@
  * src/thresholds.ts.
  */
 
+import '@fontsource/archivo-black'
+import '@fontsource/inter/300.css'
+import butterchurnModule from 'butterchurn'
 import type { AudioFrame } from './audioMath'
-import { chooseMotif, NEUTRAL_PARAMS, paramsForSection, type SceneParams } from './mapping'
+import { unwrapButterchurn } from './background'
+import { BEHAVIOR_NAMES, type BehaviorName } from './behaviors'
+import { chooseMotif, NEUTRAL_PARAMS, paramsForSection, type SceneParams, type TextParams } from './mapping'
+import { PRESET_NAMES, PRESETS } from './presetMap'
 import { createRandom } from './random'
 import { Scene } from './scene'
 import {
@@ -17,7 +23,9 @@ import {
   type Semantics,
   type SemanticSection,
 } from './semantics'
+import { TextLayer } from './textLayer'
 import { THRESHOLDS } from './thresholds'
+import { LEGIBILITY, TEXT } from './tuning'
 
 const W = 1280
 const H = 720
@@ -326,17 +334,237 @@ function neutralToggle(semantics: Semantics): {
   return { state: sim.scene.transitionState, mean: meanColor(grid(sim.canvas)) }
 }
 
+// --- kinetic typography scenarios --------------------------------------------
+
+/** Made-up lines only; lyric text never enters the repo. */
+const FAKE_LINE_A = 'FAKE KINETIC WORDS HERE'
+const FAKE_LINE_B = 'SECOND SYNTH LINE'
+
+function fakeTextParams(behavior: BehaviorName, emphasis: number): TextParams {
+  return {
+    behavior,
+    heavy: true,
+    caps: true,
+    tracking: 0.04,
+    fill: [235, 240, 250],
+    accent: [255, 180, 90],
+    tint: [60, 80, 140],
+    forceScale: 1.2,
+    sizeScale: 1,
+    scrim: 0.3,
+    emphasis,
+    shatterExit: emphasis >= TEXT.shatterEmphasis,
+  }
+}
+
+interface TextStrip {
+  name: string
+  frames: HTMLCanvasElement[]
+}
+
+interface TextScenarioResult {
+  strip: TextStrip
+  checks: Check[]
+}
+
+/** Snapshot the (transparent) text canvas composited over black. */
+function snapText(canvas: HTMLCanvasElement, w: number, h: number): HTMLCanvasElement {
+  const copy = document.createElement('canvas')
+  copy.width = w
+  copy.height = h
+  const ctx = copy.getContext('2d')!
+  ctx.fillStyle = '#000'
+  ctx.fillRect(0, 0, w, h)
+  ctx.drawImage(canvas, 0, 0, w, h)
+  return copy
+}
+
+/**
+ * Run one behavior through entrance, settled motion and exit on made-up
+ * lines, measuring the hard legibility rules from src/tuning.ts:
+ * settled words upright within the tilt limit, near their slot, inside
+ * the viewport; slot boxes never overlapping; at most two lines around.
+ */
+function textScenario(name: BehaviorName | 'shatter'): TextScenarioResult {
+  const behavior: BehaviorName = name === 'shatter' ? 'slam' : name
+  const emphasis = name === 'shatter' ? 0.9 : 0.6
+  const params = fakeTextParams(behavior, emphasis)
+  const canvas = document.createElement('canvas')
+  const layer = new TextLayer(canvas, createRandom(SEED))
+  layer.resize(W, H, 1)
+  const lineA = { index: 0, text: FAKE_LINE_A, start: 0, end: 2.4 }
+  const lineB = { index: 1, text: FAKE_LINE_B, start: 2.4, end: 4.8 }
+
+  const frames: HTMLCanvasElement[] = []
+  const captureAt = [0.22, 1.9, 2.55]
+  let nextCapture = 0
+  let worstTilt = 0
+  let worstDist = 0
+  let outOfView = 0
+  let lineCountViolations = 0
+  let overlapViolations = 0
+
+  const steps = Math.round(3.6 / DT)
+  for (let i = 0; i < steps; i++) {
+    const t = i * DT
+    layer.draw(scripted(t, 0.6, true), {
+      params,
+      line: t < 2.4 ? lineA : lineB,
+      time: t,
+      behaviorOverride: behavior,
+    }, DT)
+
+    if (nextCapture < captureAt.length && t >= captureAt[nextCapture]) {
+      frames.push(snapText(canvas, 240, 135))
+      nextCapture++
+    }
+
+    const state = layer.inspect()
+    if (state.lineCount > 2) lineCountViolations++
+    const settled = state.words.filter(
+      (word) => word.entered && t >= word.onset + LEGIBILITY.settleSec + DT,
+    )
+    for (const word of settled) {
+      worstTilt = Math.max(worstTilt, Math.abs(word.rotDeg))
+      const dist = Math.hypot(word.xPx - word.slotXPx, word.yPx - word.slotYPx)
+      const tol = LEGIBILITY.slotTolFrac * word.fontSize + THRESHOLDS.legibilityEpsPx
+      worstDist = Math.max(worstDist, dist - LEGIBILITY.slotTolFrac * word.fontSize)
+      if (dist > tol) worstDist = Math.max(worstDist, dist - tol)
+      const eps = THRESHOLDS.legibilityEpsPx
+      if (
+        word.xPx - word.wPx / 2 < -eps ||
+        word.xPx + word.wPx / 2 > W + eps ||
+        word.yPx - word.hPx < -eps ||
+        word.yPx + word.hPx > H + eps
+      ) {
+        outOfView++
+      }
+    }
+    // Slot boxes must not overlap at rest (checked mid-line, settled).
+    if (Math.abs(t - 1.9) < DT) {
+      const words = state.words
+      for (let a = 0; a < words.length; a++) {
+        for (let b = a + 1; b < words.length; b++) {
+          const dx = Math.abs(words[a].slotXPx - words[b].slotXPx)
+          const dy = Math.abs(words[a].slotYPx - words[b].slotYPx)
+          if (
+            dx < ((words[a].wPx + words[b].wPx) / 2) * 0.98 &&
+            dy < ((words[a].hPx + words[b].hPx) / 2) * 0.98
+          ) {
+            overlapViolations++
+          }
+        }
+      }
+    }
+  }
+
+  const checks: Check[] = [
+    {
+      name: `text settles legible: ${name}`,
+      pass:
+        worstTilt <= LEGIBILITY.maxTiltDeg + THRESHOLDS.legibilityEpsDeg &&
+        worstDist <= THRESHOLDS.legibilityEpsPx &&
+        outOfView === 0,
+      value: `tilt ${worstTilt.toFixed(1)}°, slot overshoot ${worstDist.toFixed(1)}px, offscreen ${outOfView}`,
+      threshold: `tilt <= ${LEGIBILITY.maxTiltDeg}°, near slot within ${LEGIBILITY.slotTolFrac}x font, on screen (settle ${LEGIBILITY.settleSec}s)`,
+    },
+    {
+      name: `text slots don't overlap: ${name}`,
+      pass: overlapViolations === 0,
+      value: String(overlapViolations),
+      threshold: '0 overlapping rest boxes',
+    },
+    {
+      name: `text line count <= 2: ${name}`,
+      pass: lineCountViolations === 0,
+      value: String(lineCountViolations),
+      threshold: 'current + outgoing only',
+    },
+  ]
+  return { strip: { name: `text: ${name} (entrance / settled / exit)`, frames }, checks }
+}
+
+/** Butterchurn smoke: with an oscillator source, frames are not blank. */
+async function butterchurnSmoke(): Promise<Check> {
+  const name = 'butterchurn smoke (oscillator)'
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = 144
+  if (!canvas.getContext('webgl2')) {
+    return {
+      name,
+      pass: true,
+      value: 'SKIPPED with warning: headless browser lacks WebGL 2',
+      threshold: `stddev >= ${THRESHOLDS.butterchurnMinStdDev}`,
+    }
+  }
+  try {
+    const context = new AudioContext()
+    try {
+      await context.resume()
+    } catch {
+      // stays suspended: render still runs, audio reads as silence
+    }
+    const osc = context.createOscillator()
+    const gain = context.createGain()
+    gain.gain.value = 0.6
+    osc.type = 'sawtooth'
+    osc.frequency.value = 110
+    osc.connect(gain) // deliberately not to the destination: silent
+    osc.start()
+    const visualizer = unwrapButterchurn(butterchurnModule).createVisualizer(context, canvas, {
+      width: 256,
+      height: 144,
+    })
+    visualizer.connectAudio(gain)
+    visualizer.loadPreset(PRESETS[PRESET_NAMES[0]], 0)
+    for (let i = 0; i < 70; i++) {
+      visualizer.render()
+      await new Promise((resolve) => setTimeout(resolve, 15))
+    }
+    const copy = document.createElement('canvas')
+    copy.width = 64
+    copy.height = 36
+    const ctx = copy.getContext('2d')!
+    ctx.drawImage(canvas, 0, 0, 64, 36)
+    const data = ctx.getImageData(0, 0, 64, 36).data
+    let sum = 0
+    let sumSq = 0
+    const n = data.length / 4
+    for (let i = 0; i < data.length; i += 4) {
+      const lum = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]
+      sum += lum
+      sumSq += lum * lum
+    }
+    const mean = sum / n
+    const stddev = Math.sqrt(Math.max(0, sumSq / n - mean * mean))
+    osc.stop()
+    await context.close()
+    return {
+      name,
+      pass: stddev >= THRESHOLDS.butterchurnMinStdDev,
+      value: `stddev ${stddev.toFixed(2)}`,
+      threshold: `>= ${THRESHOLDS.butterchurnMinStdDev}`,
+    }
+  } catch (error) {
+    return { name, pass: false, value: String(error), threshold: 'renders without throwing' }
+  }
+}
+
 // --- contact sheet -----------------------------------------------------------
 
-function buildSheet(tiles: Tile[], strips: Strip[]): void {
+function buildSheet(tiles: Tile[], strips: Strip[], textStrips: TextStrip[]): void {
   const sheet = document.getElementById('sheet') as HTMLCanvasElement
   const margin = 12
   const cols = 4
   const labelH = 16
+  const TEXT_W = 240
+  const TEXT_H = 135
   const tileRows = Math.ceil(tiles.length / cols)
   const width = margin + cols * (TILE_W + margin)
   const stripY = margin + 24 + tileRows * (TILE_H + labelH + margin) + 24
-  const height = stripY + strips.length * (STRIP_H + labelH + margin) + margin
+  const textY = stripY + strips.length * (STRIP_H + labelH + margin) + 24
+  const height = textY + textStrips.length * (TEXT_H + labelH + margin) + margin
   sheet.width = width
   sheet.height = height
   const ctx = sheet.getContext('2d')!
@@ -364,6 +592,17 @@ function buildSheet(tiles: Tile[], strips: Strip[]): void {
     })
     ctx.fillStyle = '#cfd6e4'
     ctx.fillText(`${strip.name} · max frame step ${strip.maxStep.toFixed(2)}`, margin, y + STRIP_H + 3)
+  })
+
+  ctx.fillStyle = '#cfd6e4'
+  ctx.fillText('kinetic typography (made-up lines, black background)', margin, textY - 20)
+  textStrips.forEach((strip, i) => {
+    const y = textY + i * (TEXT_H + labelH + margin)
+    strip.frames.forEach((frame, j) => {
+      ctx.drawImage(frame, margin + j * (TEXT_W + 6), y)
+    })
+    ctx.fillStyle = '#cfd6e4'
+    ctx.fillText(strip.name, margin, y + TEXT_H + 3)
   })
 }
 
@@ -541,7 +780,24 @@ async function run(): Promise<Report> {
     steadyMaxStep,
     drawMs,
   )
-  buildSheet(tiles, strips)
+
+  // Kinetic typography: filmstrip + measured legibility per behavior.
+  // ctx.font alone never triggers CSS font loading; request the faces.
+  await Promise.all([
+    document.fonts.load('400 32px "Archivo Black"'),
+    document.fonts.load('300 32px Inter'),
+  ])
+  await document.fonts.ready
+  const textStrips: TextStrip[] = []
+  for (const behavior of [...BEHAVIOR_NAMES, 'shatter' as const]) {
+    const result = textScenario(behavior)
+    textStrips.push(result.strip)
+    checks.push(...result.checks)
+  }
+
+  checks.push(await butterchurnSmoke())
+
+  buildSheet(tiles, strips, textStrips)
 
   return {
     checks,

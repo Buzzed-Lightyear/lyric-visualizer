@@ -210,6 +210,88 @@ export const EMPHASIS = {
   kickCap: 1.6,
 }
 
+/** Kinetic typography layer. */
+export const TEXT = {
+  /** Font size as a fraction of the smaller window side, at sizeScale 1. */
+  baseSizeFrac: 0.07,
+  minSizeFrac: 0.025,
+  maxWidthFrac: 0.88,
+  rowGap: 1.2,
+  /** Word spacing as a fraction of the font size. */
+  wordSpaceFrac: 0.33,
+  /** Vertical center of the text block, as a fraction of the height. */
+  centerY: 0.42,
+  /** Dark scrim and palette tint between background and text. */
+  scrimBase: 0.22,
+  scrimEmphasis: 0.3,
+  tintStrength: 0.1,
+  /** Word-onset estimate: span fraction of the line and its cap (s). */
+  onsetSpread: 0.7,
+  onsetSpanCap: 4,
+  exitSec: 0.9,
+  /** Lines at or above this emphasis exit by shattering into letters. */
+  shatterEmphasis: 0.85,
+  /** Energy -> force scale. */
+  forceBase: 0.5,
+  forceEnergy: 1.1,
+  /** Bass shakes everything a little; beats kick via each behavior. */
+  bassShake: 0.055,
+  bassShakeRate: 23,
+  bassScale: 0.1,
+}
+
+export const PHYSICS = {
+  /** Fixed integration substep, seconds. */
+  substep: 1 / 120,
+}
+
+/** Hard legibility rules; the harness measures these. */
+export const LEGIBILITY = {
+  /** A word must be readable within this long after its onset. */
+  settleSec: 0.35,
+  maxTiltDeg: 8,
+  /** "Near its slot": max offset as a fraction of the font size. */
+  slotTolFrac: 0.35,
+}
+
+export const BUTTERCHURN = {
+  /** Render resolution as a fraction of CSS pixels (caps GPU cost). */
+  resolution: 0.6,
+  /** Preset blend times (s) for section commits. */
+  blendRise: 0.5,
+  blendFall: 2.7,
+  blendNormal: 1.4,
+  /** Blend when cycling presets with [ and ]. */
+  cycleBlend: 0.6,
+}
+
+/** Per-behavior spring constants and forces. */
+export const BEHAVIOR = {
+  slam: {
+    k: 160, c: 18, kRot: 120, cRot: 14, kScale: 90, cScale: 12,
+    enterScale: 2.6, jolt: 0.05, joltRot: 1.4, joltScale: 1.2, exitGravity: 1.8,
+  },
+  drop: {
+    k: 90, c: 10, kRot: 80, cRot: 10,
+    gravity: 3.2, restitution: 0.45, dropHeight: 0.35, hop: 0.12, exitGravity: 2.6,
+  },
+  float: {
+    k: 18, c: 4.5, kRot: 30, cRot: 5,
+    buoyancy: 0.04, bobAmp: 0.1, bobRate: 1.8, beatLift: 0.05, exitRise: 1.4,
+  },
+  tremble: {
+    k: 260, c: 22, kRot: 200, cRot: 18,
+    noise: 0.5, noiseRate: 31,
+  },
+  swing: {
+    k: 140, c: 14, kRot: 26, cRot: 1.4,
+    enterTilt: 0.6, push: 1.6,
+  },
+  shatter: {
+    gravity: 2.4, spreadX: 0.35, spreadY: 0.3, spin: 7, fadeSec: 1.1,
+  },
+}
+
 export const MAPPING = {
   /** Energy 0 -> AtZero, energy 1 -> AtFull (multiplied into the baselines). */
   countAtZero: 0.5,

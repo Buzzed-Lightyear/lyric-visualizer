@@ -1,0 +1,22 @@
+/** Minimal typings; butterchurn ships none. */
+declare module 'butterchurn' {
+  export interface ButterchurnVisualizer {
+    connectAudio(node: AudioNode): void
+    loadPreset(preset: object, blendTimeSec: number): void
+    setRendererSize(width: number, height: number): void
+    render(): void
+  }
+  const butterchurn: {
+    createVisualizer(
+      context: AudioContext,
+      canvas: HTMLCanvasElement,
+      options: { width: number; height: number; pixelRatio?: number },
+    ): ButterchurnVisualizer
+  }
+  export default butterchurn
+}
+
+declare module 'butterchurn-presets' {
+  const presets: { getPresets(): Record<string, object> }
+  export default presets
+}

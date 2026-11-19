@@ -33,4 +33,9 @@ export const THRESHOLDS = {
   /** Rough per-frame draw budget at 1280x720 DPR 1 in headless Chromium. */
   drawAvgMs: 8,
   drawP99Ms: 30,
+  /** Measurement slack for the text legibility rules (src/tuning.ts LEGIBILITY). */
+  legibilityEpsPx: 2,
+  legibilityEpsDeg: 0.5,
+  /** Butterchurn smoke: minimum luminance stddev of a rendered frame. */
+  butterchurnMinStdDev: 2,
 } as const

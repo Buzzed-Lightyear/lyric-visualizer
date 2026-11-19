@@ -9,6 +9,7 @@ import { ANALYSIS } from './tuning'
 interface Graph {
   context: AudioContext
   analyser: AnalyserNode
+  source: MediaElementAudioSourceNode
 }
 
 // createMediaElementSource may be called only once per element, and React
@@ -26,10 +27,21 @@ function getGraph(audio: HTMLMediaElement): Graph {
     source.connect(analyser)
     // Playback is silent unless the rerouted source reaches the output.
     analyser.connect(context.destination)
-    graph = { context, analyser }
+    graph = { context, analyser, source }
     graphs.set(audio, graph)
   }
   return graph
+}
+
+/**
+ * The element's audio graph, if it exists yet (it is created on the first
+ * play gesture). Butterchurn taps the source node through this.
+ */
+export function getAudioGraph(
+  audio: HTMLMediaElement,
+): { context: AudioContext; source: MediaElementAudioSourceNode } | null {
+  const graph = graphs.get(audio)
+  return graph ? { context: graph.context, source: graph.source } : null
 }
 
 export class AudioAnalysis {

@@ -12,6 +12,15 @@ import * as TUNING from './tuning'
 const GROUPS: Record<string, Record<string, unknown>> = {
   analysis: TUNING.ANALYSIS,
   beat: TUNING.BEAT,
+  text: TUNING.TEXT,
+  legibility: TUNING.LEGIBILITY,
+  butterchurn: TUNING.BUTTERCHURN,
+  'behavior: slam': TUNING.BEHAVIOR.slam,
+  'behavior: drop': TUNING.BEHAVIOR.drop,
+  'behavior: float': TUNING.BEHAVIOR.float,
+  'behavior: tremble': TUNING.BEHAVIOR.tremble,
+  'behavior: swing': TUNING.BEHAVIOR.swing,
+  'behavior: shatter': TUNING.BEHAVIOR.shatter,
   'scene / drift': TUNING.SCENE,
   trail: TUNING.TRAIL,
   background: TUNING.BG,
@@ -25,7 +34,16 @@ const GROUPS: Record<string, Record<string, unknown>> = {
 }
 
 /** Applied at graph/renderer construction; changing them live is a no-op. */
-const SKIP = new Set(['fftSize', 'analyserSmoothing', 'count', 'blobCount', 'lightCount', 'particleCount', 'points'])
+const SKIP = new Set([
+  'fftSize',
+  'analyserSmoothing',
+  'count',
+  'blobCount',
+  'lightCount',
+  'particleCount',
+  'points',
+  'substep',
+])
 
 export interface Knobs {
   toggle(): void

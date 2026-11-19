@@ -29,12 +29,14 @@ async function waitForServer(url, timeoutMs = 20000) {
   throw new Error(`dev server did not come up at ${url}`)
 }
 
+const LAUNCH_ARGS = ['--autoplay-policy=no-user-gesture-required']
+
 async function launchBrowser() {
   try {
     // Prefer installed Chrome when available.
-    return await chromium.launch({ channel: 'chrome' })
+    return await chromium.launch({ channel: 'chrome', args: LAUNCH_ARGS })
   } catch {
-    return await chromium.launch()
+    return await chromium.launch({ args: LAUNCH_ARGS })
   }
 }
 
@@ -105,7 +107,11 @@ try {
     })
     await app.goto(BASE)
     await app.waitForTimeout(1500)
-    for (const key of ['l', 'd', 's', 'l', 'd', 's']) await app.keyboard.press(key)
+    // Cycle to the canvas-scene background so there is something to sample
+    // (butterchurn needs a play gesture), then exercise every key once.
+    await app.keyboard.press('b')
+    for (const key of ['l', 'd', 's', 'k', 't', '[', ']', 'm', '1', '0', 'l', 'd', 's', 'k', 't'])
+      await app.keyboard.press(key)
     await app.waitForTimeout(500)
     const appOk = await app.evaluate(() => {
       const canvas = document.querySelector('canvas.scene')

@@ -5,8 +5,9 @@
  * and how much. One hardcoded mapping; presets and seeds are step 5.
  */
 
+import type { BehaviorName } from './behaviors'
 import type { SemanticSection } from './semantics'
-import { MAPPING, SCENE } from './tuning'
+import { MAPPING, SCENE, TEXT } from './tuning'
 
 export type Motif = 'drift' | 'embers' | 'rain' | 'stars' | 'haze'
 
@@ -112,6 +113,80 @@ function hexToRgb(hex: string): Rgb {
 /** Linear blend from the value at 0 to the value at 1. */
 function span(atZero: number, atFull: number, t: number): number {
   return atZero + (atFull - atZero) * t
+}
+
+// --- kinetic typography ------------------------------------------------------
+
+export interface TextParams {
+  behavior: BehaviorName
+  /** Heavy display face vs the light one. */
+  heavy: boolean
+  caps: boolean
+  /** Letter tracking in ems. */
+  tracking: number
+  fill: Rgb
+  accent: Rgb
+  tint: Rgb
+  /** Energy -> how hard forces act. */
+  forceScale: number
+  /** Emphasis -> size multiplier on the base font size. */
+  sizeScale: number
+  /** Emphasis -> scrim strength under the text. */
+  scrim: number
+  emphasis: number
+  /** Emphasis >= TEXT.shatterEmphasis: the line exits by shattering. */
+  shatterExit: boolean
+}
+
+interface MoodText {
+  behavior: BehaviorName
+  heavy: boolean
+  caps: boolean
+  tracking: number
+}
+
+const DEFAULT_TEXT: MoodText = { behavior: 'float', heavy: false, caps: false, tracking: 0.08 }
+
+/** Mood -> default behavior and type style. Unknown moods get the default. */
+const MOOD_TEXT: Record<string, MoodText> = {
+  calm: { behavior: 'float', heavy: false, caps: false, tracking: 0.1 },
+  mournful: { behavior: 'float', heavy: false, caps: false, tracking: 0.12 },
+  suspended: { behavior: 'float', heavy: false, caps: false, tracking: 0.15 },
+  tense: { behavior: 'tremble', heavy: true, caps: false, tracking: 0.02 },
+  menacing: { behavior: 'slam', heavy: true, caps: true, tracking: 0.04 },
+  furious: { behavior: 'slam', heavy: true, caps: true, tracking: 0.02 },
+  weary: { behavior: 'swing', heavy: false, caps: false, tracking: 0.06 },
+  grieving: { behavior: 'drop', heavy: false, caps: false, tracking: 0.08 },
+  brooding: { behavior: 'swing', heavy: true, caps: false, tracking: 0.05 },
+  hollow: { behavior: 'drop', heavy: false, caps: false, tracking: 0.2 },
+}
+
+const NEUTRAL_FILL: Rgb = [232, 238, 248]
+const NEUTRAL_ACCENT: Rgb = [255, 180, 90]
+const NEUTRAL_TINT: Rgb = [255, 148, 64]
+
+/** Pure, like paramsForSection: same section + emphasis, same params. */
+export function textParamsForSection(
+  section: SemanticSection | null,
+  emphasis: number,
+): TextParams {
+  const style = section ? (MOOD_TEXT[section.mood.toLowerCase()] ?? DEFAULT_TEXT) : DEFAULT_TEXT
+  const energy = section?.energy ?? 0.5
+  const palette = section?.palette.map(hexToRgb)
+  return {
+    behavior: style.behavior,
+    heavy: style.heavy,
+    caps: style.caps,
+    tracking: style.tracking,
+    fill: palette?.[2] ?? NEUTRAL_FILL,
+    accent: palette?.[3] ?? palette?.[1] ?? NEUTRAL_ACCENT,
+    tint: palette?.[1] ?? NEUTRAL_TINT,
+    forceScale: TEXT.forceBase + energy * TEXT.forceEnergy,
+    sizeScale: 0.75 + emphasis * 0.5,
+    scrim: Math.min(1, TEXT.scrimBase + emphasis * TEXT.scrimEmphasis),
+    emphasis,
+    shatterExit: emphasis >= TEXT.shatterEmphasis,
+  }
 }
 
 /**

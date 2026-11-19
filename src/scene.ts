@@ -12,14 +12,6 @@ import { createRenderers, rgba, type MotifRenderer, type View } from './motifs'
 import type { Random } from './random'
 import { BG, SCENE, TRANSITION } from './tuning'
 
-/** Pre-formatted strings for the debug overlay; the scene just prints them. */
-export interface DebugInfo {
-  semantics: string
-  section: string
-  motif: string
-  emphasis: number
-}
-
 function copyParams(p: SceneParams): SceneParams {
   return {
     ...p,
@@ -228,53 +220,4 @@ export class Scene {
     }
   }
 
-  /** Bars for the five AudioFrame values plus the current semantic state. */
-  drawDebug(frame: AudioFrame, info: DebugInfo): void {
-    const { ctx } = this
-    const bars: [string, number][] = [
-      ['level', frame.level],
-      ['bass', frame.bass],
-      ['mid', frame.mid],
-      ['high', frame.high],
-      ['beat', frame.beat],
-    ]
-    const fade = this.incoming
-      ? `${this.current.key} -> ${this.incoming.key} ${Math.round(smoothstep(this.fadeX) * 100)}%`
-      : this.pending
-        ? `waiting on beat -> ${this.pending.key}`
-        : '—'
-    const texts = [
-      `sem    ${info.semantics}`,
-      `sect   ${info.section}`,
-      `motif  ${info.motif}`,
-      `emph   ${info.emphasis.toFixed(2)}`,
-      `trans  ${fade}`,
-    ]
-    const x = 12
-    const y = 12
-    const labelW = 44
-    const barW = 160
-    const barH = 10
-    const gap = 18
-
-    ctx.globalCompositeOperation = 'source-over'
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'
-    ctx.fillRect(x - 8, y - 8, 360, bars.length * gap + texts.length * gap + 14)
-    ctx.font = '11px monospace'
-    ctx.textBaseline = 'top'
-    bars.forEach(([name, value], i) => {
-      const rowY = y + i * gap
-      ctx.fillStyle = '#9fb4d8'
-      ctx.fillText(name, x, rowY)
-      ctx.fillText(value.toFixed(2), x + labelW + barW + 6, rowY)
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.15)'
-      ctx.fillRect(x + labelW, rowY, barW, barH)
-      ctx.fillStyle = name === 'beat' ? '#ffb45a' : '#7fd1a8'
-      ctx.fillRect(x + labelW, rowY, barW * value, barH)
-    })
-    ctx.fillStyle = '#9fb4d8'
-    texts.forEach((text, i) => {
-      ctx.fillText(text, x, y + bars.length * gap + 6 + i * gap)
-    })
-  }
 }

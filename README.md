@@ -44,14 +44,48 @@ To use different file names, change the constants in `src/App.tsx`.
 
 ## Keys
 
-- `L`: show or hide the lyric line
-- `D`: debug overlay — the five analysis values as bars, plus the current
-  section, chosen motif, and line emphasis
+- `L`: show or hide the lyrics (physics text or the DOM line)
+- `T`: physics text vs the old single DOM lyric line
+- `B`: cycle the background — butterchurn / canvas scene / black
+- `[` / `]`: cycle butterchurn presets (for auditioning)
+- `M`: pin the current preset to the current section's mood (saved in
+  localStorage; also logs a line to paste into `src/presetMap.ts`)
+- `1`-`5`: force a text behavior (slam, drop, float, tremble, swing);
+  `0` returns control to the mood mapping
+- `D`: debug overlay — analysis bars, section, committed key, motif,
+  emphasis, background mode + preset name, text mode + behavior
 - `S`: toggle semantics on/off (off reproduces the step 2 look, for A/B)
 - `K`: tuning panel (Tweakpane) — live sliders for every numeric knob in
   `src/tuning.ts`, grouped by module. Edits apply on the next frame and
   are not persisted; use "log values to console" and copy keepers into
   `src/tuning.ts`. Particle counts and FFT size apply at startup only.
+
+## Step 3 spike: MilkDrop background + kinetic typography
+
+An exploration rig for auditioning motion behaviors and presets, not a
+finished look. Three layers: butterchurn (WebGL 2, falls back to the
+canvas scene if unavailable) renders MilkDrop-style visuals fed by the
+same `MediaElementSource`; a dark scrim plus a palette tint keeps text
+readable; and a Canvas 2D layer on top runs physics-driven typography.
+Each word is a spring-tied body (hand-rolled, fixed-step, no physics
+library); behaviors (slam, drop, float, tremble, swing, plus a shatter
+exit for lines with emphasis >= 0.85) set the spring constants, forces,
+entrances and exits. Audio drives all ongoing motion: beat = impulse,
+bass = shake and scale pulse, level = energy. Mood picks the default
+behavior, type style (Archivo Black / Inter Light, both OFL) and the
+background preset (`src/presetMap.ts`); imagery tags are unused here.
+
+**Word onsets are an estimate**: the LRC is line-timed, so words are
+spread across the first ~70% of each line's duration (capped), weighted
+by word length (`src/onsets.ts`). Real word timing would need alignment
+tooling, which is out of scope.
+
+Hard legibility rules, measured by `npm run shots`: within 0.35 s of its
+onset a word is upright (±8°), near its slot and on screen, and stays
+that way until its exit starts; rest boxes never overlap; at most the
+current and outgoing lines are on screen. The harness also films each
+behavior's entrance/settle/exit on made-up lines and smoke-tests
+butterchurn with an oscillator (skipped with a warning without WebGL 2).
 
 ## Semantics file format
 
