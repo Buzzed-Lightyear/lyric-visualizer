@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AudioAnalysis } from './analysis'
 import { activeLineIndex, parseLrc, type LyricLine } from './lrc'
+import { createKnobs, type Knobs } from './knobs'
 import { chooseMotif, NEUTRAL_PARAMS, paramsForSection } from './mapping'
 import { createRandom } from './random'
 import { Scene } from './scene'
@@ -38,6 +39,16 @@ function App() {
   const semanticsRef = useRef<Semantics | null>(null)
   const semanticsOnRef = useRef(true)
   const debugRef = useRef(false)
+  const knobsRef = useRef<Knobs | null>(null)
+
+  useEffect(() => {
+    const knobs = createKnobs()
+    knobsRef.current = knobs
+    return () => {
+      knobsRef.current = null
+      knobs.dispose()
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -94,6 +105,7 @@ function App() {
       if (key === 'l') setShowLyrics((visible) => !visible)
       if (key === 'd') debugRef.current = !debugRef.current
       if (key === 's') semanticsOnRef.current = !semanticsOnRef.current
+      if (key === 'k') knobsRef.current?.toggle()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -208,7 +220,7 @@ function App() {
         >
           {activeLine?.text ?? ' '}
         </p>
-        <p className="hint">L lyrics · D debug · S semantics</p>
+        <p className="hint">L lyrics · D debug · S semantics · K knobs</p>
       </main>
     </>
   )

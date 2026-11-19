@@ -17,7 +17,7 @@ export const ANALYSIS = {
   peakDecay: 0.08,
   /** Quietest peak to normalize against, so silence doesn't blow up to 1. */
   peakFloor: 0.06,
-} as const
+}
 
 export const BEAT = {
   /** Fire when raw bass exceeds its running average by this factor. */
@@ -30,7 +30,7 @@ export const BEAT = {
   averageSec: 1.2,
   /** How fast the 0..1 pulse falls after firing, per second. */
   pulseDecay: 5,
-} as const
+}
 
 /** Shared scene baselines; the drift motif IS the step 2 look. */
 export const SCENE = {
@@ -38,17 +38,8 @@ export const SCENE = {
   backgroundRgb: '8, 10, 18',
   /** Drift particle count (the step 2 look). */
   particleCount: 140,
-  /** Trail fade rate per second; higher = shorter trails. */
-  trailFade: 3.5,
-  /**
-   * The fade is accumulated and applied only once it reaches this alpha:
-   * 8-bit rounding stalls a low-alpha fade ~0.5/alpha counts above the
-   * background, leaving permanent ghost trails. Flushing at 0.3 bounds
-   * the residue below 2 counts (invisible) at ~10 Hz fade steps.
-   */
-  trailFlushAlpha: 0.3,
   /** Particle drift, as a fraction of the window per second. */
-  idleSpeed: 0.012,
+  idleSpeed: 0.016,
   levelSpeed: 0.1,
   /** Direction wander (radians/s of turn): idle floor + what mid adds. */
   wanderRate: 0.9,
@@ -65,8 +56,8 @@ export const SCENE = {
   glowBase: 0.16,
   glowBass: 0.16,
   glowBeat: 0.07,
-  glowAlphaBase: 0.1,
-  glowAlphaBass: 0.22,
+  glowAlphaBase: 0.45,
+  glowAlphaBass: 0.45,
   /** Idle breathing so pause settles into slow motion instead of freezing. */
   breathRate: 0.6,
   breathAmount: 0.015,
@@ -75,7 +66,21 @@ export const SCENE = {
   ringAlpha: 0.3,
   /** How strongly a mood's lift (-1..1) tilts particle drift vertically. */
   liftBias: 0.035,
-} as const
+}
+
+/**
+ * Explicit particle trails (drift and embers), drawn from position
+ * history. The old canvas-feedback trails pulsed (the fade had to flush
+ * in chunks to dodge 8-bit rounding) and ghosted; these do neither.
+ */
+export const TRAIL = {
+  /** History points per particle. */
+  points: 8,
+  /** Seconds between samples; points * spacing = trail duration. */
+  spacingSec: 0.035,
+  /** Head alpha of the trail, scaled down along its length. */
+  alpha: 0.35,
+}
 
 /** Semantic background: gradient + vignette strength (0 for neutral/drift). */
 export const BG = {
@@ -85,7 +90,7 @@ export const BG = {
   bottomGlowMix: 0.16,
   /** Edge darkening; 0 disables the vignette. */
   vignette: 0.5,
-} as const
+}
 
 export const EMBERS = {
   count: 150,
@@ -103,22 +108,19 @@ export const EMBERS = {
   /** Sprite size range in px (scaled by depth). */
   sizeMin: 3,
   sizeMax: 9,
-  alphaBase: 0.25,
-  alphaLevel: 0.55,
-  /**
-   * Heat bed along the bottom edge. NOTE: static glows accumulate ~17x
-   * under the additive trail feedback, so these alphas stay tiny.
-   */
+  alphaBase: 0.35,
+  alphaLevel: 0.65,
+  /** Heat bed along the bottom edge. */
   bedHeight: 0.25,
-  bedAlpha: 0.02,
-  bedBass: 0.05,
-  bedKick: 0.04,
-} as const
+  bedAlpha: 0.2,
+  bedBass: 0.5,
+  bedKick: 0.25,
+}
 
 export const RAIN = {
   count: 170,
   depthSpeed: [0.5, 0.75, 1],
-  depthAlpha: [0.3, 0.55, 0.85],
+  depthAlpha: [0.35, 0.6, 0.9],
   depthWidth: [1, 1.4, 1.9],
   /** Tilt from vertical, radians. */
   tilt: 0.16,
@@ -126,14 +128,14 @@ export const RAIN = {
   fallSpeed: 0.5,
   fallLevel: 0.6,
   /** Streak length as a fraction of fall-per-second. */
-  lengthFactor: 0.09,
+  lengthFactor: 0.14,
   alphaLevel: 0.35,
   alphaKick: 0.15,
-  /** Dim glow high up (static: accumulates ~17x, keep tiny). */
-  topGlowAlpha: 0.015,
-  topGlowBass: 0.025,
+  /** Dim glow high up. */
+  topGlowAlpha: 0.1,
+  topGlowBass: 0.16,
   topGlowHeight: 0.4,
-} as const
+}
 
 export const STARS = {
   count: 210,
@@ -150,33 +152,33 @@ export const STARS = {
   /** Every nth star is bright (bigger sprite). */
   brightEvery: 11,
   brightSize: 2.2,
-  /** Soft glow at the horizon (static: accumulates ~17x, keep tiny). */
-  horizonAlpha: 0.02,
-  horizonBass: 0.035,
-  horizonKick: 0.03,
+  /** Soft glow at the horizon. */
+  horizonAlpha: 0.14,
+  horizonBass: 0.24,
+  horizonKick: 0.2,
   horizonRadius: 0.65,
-} as const
+}
 
 export const HAZE = {
   blobCount: 12,
   /** Blob size range, as fractions of the smaller window side. */
   blobSizeMin: 0.2,
   blobSizeMax: 0.42,
-  blobAlpha: 0.05,
-  blobLevel: 0.05,
-  blobKick: 0.04,
+  blobAlpha: 0.16,
+  blobLevel: 0.16,
+  blobKick: 0.1,
   /** Blob wander speed, fraction of window per second. */
   blobSpeed: 0.008,
   /** Blurred bokeh lights. */
   lightCount: 26,
   lightSizeMin: 0.015,
   lightSizeMax: 0.05,
-  lightAlpha: 0.1,
-  lightLevel: 0.25,
+  lightAlpha: 0.2,
+  lightLevel: 0.35,
   lightTwinkle: 0.3,
   twinkleRate: 3,
   lightSpeed: 0.012,
-} as const
+}
 
 /** How a section change commits and crossfades. Audio decides when. */
 export const TRANSITION = {
@@ -194,7 +196,7 @@ export const TRANSITION = {
   /** Extra accent injected when a rise commits, and its decay per second. */
   riseKick: 1,
   kickDecay: 4,
-} as const
+}
 
 /**
  * How line emphasis (via params.accent, 1 = neutral) scales the
@@ -206,7 +208,7 @@ export const EMPHASIS = {
   size: 0.35,
   /** Cap on the beat kick after accent scaling. */
   kickCap: 1.6,
-} as const
+}
 
 export const MAPPING = {
   /** Energy 0 -> AtZero, energy 1 -> AtFull (multiplied into the baselines). */
@@ -219,4 +221,4 @@ export const MAPPING = {
   /** Same idea for line emphasis -> how hard beat accents land. */
   accentAtZero: 0.4,
   accentAtFull: 1.6,
-} as const
+}

@@ -17,8 +17,14 @@ export const THRESHOLDS = {
   maxSameLabelDistance: 1.5,
   /** Semantics toggled off mid-song must land this close to the neutral look. */
   maxNeutralDistance: 4,
-  /** Idle (level 0) inter-frame motion must stay above this (no freezing). */
-  idleMotionMin: 0.02,
+  /**
+   * Idle (level 0) inter-frame motion must stay above this (no freezing).
+   * Recalibrated 0.02 -> 0.012 when canvas-feedback trails were replaced
+   * with explicit ones: the same visible idle motion now smears across
+   * fewer pixels, so it reads lower on the grid metric. Flagged to the
+   * owner in the step 3 flicker-fix pass.
+   */
+  idleMotionMin: 0.012,
   /** Motion at level 1 must exceed motion at level 0.35 by this factor. */
   motionRiseFactor: 1.25,
   /** Max single-frame change inside a transition, as a multiple of the

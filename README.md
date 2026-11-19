@@ -48,6 +48,10 @@ To use different file names, change the constants in `src/App.tsx`.
 - `D`: debug overlay — the five analysis values as bars, plus the current
   section, chosen motif, and line emphasis
 - `S`: toggle semantics on/off (off reproduces the step 2 look, for A/B)
+- `K`: tuning panel (Tweakpane) — live sliders for every numeric knob in
+  `src/tuning.ts`, grouped by module. Edits apply on the next frame and
+  are not persisted; use "log values to console" and copy keepers into
+  `src/tuning.ts`. Particle counts and FFT size apply at startup only.
 
 ## Semantics file format
 

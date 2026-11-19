@@ -9,7 +9,7 @@
 import type { AudioFrame } from './audioMath'
 import type { Motif, Rgb, SceneParams } from './mapping'
 import type { Random } from './random'
-import { EMBERS, EMPHASIS, HAZE, RAIN, SCENE, STARS } from './tuning'
+import { EMBERS, EMPHASIS, HAZE, RAIN, SCENE, STARS, TRAIL } from './tuning'
 
 export interface View {
   w: number
@@ -46,6 +46,93 @@ function accentKick(frame: AudioFrame, params: SceneParams, boost: number): numb
 /** A (1 + slope * (accent - 1)) multiplier: exactly 1 at neutral accent. */
 function accentMul(slope: number, accent: number): number {
   return 1 + slope * (accent - 1)
+}
+
+// --- Explicit trails --------------------------------------------------------
+
+/** Ring buffer of recent positions (window-relative coordinates). */
+class TrailBuffer {
+  readonly xs: Float32Array
+  readonly ys: Float32Array
+  len = 0
+  private head = -1
+  private readonly cap: number
+
+  constructor(cap: number) {
+    this.cap = cap
+    this.xs = new Float32Array(cap)
+    this.ys = new Float32Array(cap)
+  }
+
+  push(x: number, y: number): void {
+    this.head = (this.head + 1) % this.cap
+    this.xs[this.head] = x
+    this.ys[this.head] = y
+    if (this.len < this.cap) this.len++
+  }
+
+  /** Buffer index of the k-th newest sample. */
+  idx(k: number): number {
+    return (this.head - k + this.cap * 2) % this.cap
+  }
+
+  clear(): void {
+    this.len = 0
+    this.head = -1
+  }
+}
+
+interface Trailed {
+  x: number
+  y: number
+  trail: TrailBuffer
+}
+
+/**
+ * Tapering comet trails, batched by age bucket so the whole set costs
+ * TRAIL.points strokes instead of one per segment.
+ */
+function drawTrails(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  items: readonly Trailed[],
+  count: number,
+  color: Rgb,
+  headAlpha: number,
+  headWidth: number,
+): void {
+  const { w, h } = view
+  for (let k = 0; k < TRAIL.points; k++) {
+    const falloff = 1 - (k + 0.5) / TRAIL.points
+    const a = headAlpha * falloff
+    if (a < 0.004) continue
+    ctx.strokeStyle = rgba(color, a)
+    ctx.lineWidth = Math.max(0.4, headWidth * falloff)
+    ctx.beginPath()
+    for (let i = 0; i < count; i++) {
+      const item = items[i]
+      const trail = item.trail
+      if (trail.len <= k) continue
+      const bi = trail.idx(k)
+      let ax: number
+      let ay: number
+      if (k === 0) {
+        ax = item.x
+        ay = item.y
+      } else {
+        const ai = trail.idx(k - 1)
+        ax = trail.xs[ai]
+        ay = trail.ys[ai]
+      }
+      const bx = trail.xs[bi]
+      const by = trail.ys[bi]
+      // A long segment means the particle wrapped an edge; skip it.
+      if (Math.abs(ax - bx) > 0.2 || Math.abs(ay - by) > 0.2) continue
+      ctx.moveTo(ax * w, ay * h)
+      ctx.lineTo(bx * w, by * h)
+    }
+    ctx.stroke()
+  }
 }
 
 // --- Soft sprites -----------------------------------------------------------
@@ -108,10 +195,12 @@ interface DriftParticle {
   speed: number
   size: number
   phase: number
+  trail: TrailBuffer
 }
 
 class DriftRenderer implements MotifRenderer {
   private readonly particles: DriftParticle[] = []
+  private sampleTimer = 0
 
   constructor(random: Random) {
     for (let i = 0; i < SCENE.particleCount; i++) {
@@ -122,6 +211,7 @@ class DriftRenderer implements MotifRenderer {
         speed: 0.5 + random(),
         size: 1 + random() * 2,
         phase: random() * Math.PI * 2,
+        trail: new TrailBuffer(TRAIL.points),
       })
     }
   }
@@ -174,13 +264,23 @@ class DriftRenderer implements MotifRenderer {
     const drive = (SCENE.idleSpeed + frame.level * SCENE.levelSpeed) * params.speed
     const wander = (SCENE.wanderIdle + frame.mid * SCENE.wanderMid) * params.jitter
     const biasY = -params.lift * SCENE.liftBias
+    this.sampleTimer += dt
+    const sample = this.sampleTimer >= TRAIL.spacingSec
+    if (sample) this.sampleTimer -= TRAIL.spacingSec
     for (let i = 0; i < count; i++) {
       const p = this.particles[i]
       p.angle += Math.sin(time * SCENE.wanderRate + p.phase) * wander * dt
       p.x += Math.cos(p.angle) * drive * p.speed * dt
       p.y += Math.sin(p.angle) * drive * p.speed * dt + biasY * dt
-      if (p.x < 0 || p.x > 1) p.x = ((p.x % 1) + 1) % 1
-      if (p.y < 0 || p.y > 1) p.y = ((p.y % 1) + 1) % 1
+      if (p.x < 0 || p.x > 1) {
+        p.x = ((p.x % 1) + 1) % 1
+        p.trail.clear()
+      }
+      if (p.y < 0 || p.y > 1) {
+        p.y = ((p.y % 1) + 1) % 1
+        p.trail.clear()
+      }
+      if (sample) p.trail.push(p.x, p.y)
 
       const twinkle = 0.5 + 0.5 * Math.sin(time * SCENE.twinkleRate + p.phase * 7)
       const a =
@@ -188,7 +288,7 @@ class DriftRenderer implements MotifRenderer {
           1,
           SCENE.particleAlphaBase +
             frame.level * SCENE.particleAlphaLevel +
-            twinkle * (0.1 + 0.9 * frame.high) * SCENE.particleAlphaHigh,
+            twinkle * (0.2 + 0.8 * frame.high) * SCENE.particleAlphaHigh,
         ) * alpha
       const size = p.size * sizeMul * (1 + Math.min(1, kick) * SCENE.particleBeatSize)
       ctx.fillStyle = rgba(params.particleColor, a)
@@ -196,6 +296,15 @@ class DriftRenderer implements MotifRenderer {
       ctx.arc(p.x * w, p.y * h, size, 0, Math.PI * 2)
       ctx.fill()
     }
+    drawTrails(
+      ctx,
+      view,
+      this.particles,
+      count,
+      params.particleColor,
+      TRAIL.alpha * (0.3 + 0.7 * frame.level) * alpha,
+      2.2 * sizeMul,
+    )
     ctx.globalAlpha = 1
   }
 }
@@ -209,12 +318,14 @@ interface Ember {
   size: number
   phase: number
   swayPhase: number
+  trail: TrailBuffer
 }
 
 class EmbersRenderer implements MotifRenderer {
   private readonly embers: Ember[] = []
   private readonly sprites = new SpriteCache()
   private readonly random: Random
+  private sampleTimer = 0
 
   constructor(random: Random) {
     this.random = random
@@ -226,6 +337,7 @@ class EmbersRenderer implements MotifRenderer {
         size: EMBERS.sizeMin + random() * (EMBERS.sizeMax - EMBERS.sizeMin),
         phase: random() * Math.PI * 2,
         swayPhase: random() * Math.PI * 2,
+        trail: new TrailBuffer(TRAIL.points),
       })
     }
   }
@@ -250,6 +362,9 @@ class EmbersRenderer implements MotifRenderer {
     const cool = this.sprites.get(params.particleColor)
     const rise =
       (EMBERS.riseSpeed + frame.level * EMBERS.riseLevel) * params.speed * (1 + kick * 0.4)
+    this.sampleTimer += dt
+    const sample = this.sampleTimer >= TRAIL.spacingSec
+    if (sample) this.sampleTimer -= TRAIL.spacingSec
 
     for (const e of this.embers) {
       const depthSpeed = EMBERS.depthSpeed[e.depth]
@@ -260,11 +375,16 @@ class EmbersRenderer implements MotifRenderer {
         depthSpeed *
         dt *
         params.jitter
-      if (e.x < 0 || e.x > 1) e.x = ((e.x % 1) + 1) % 1
+      if (e.x < 0 || e.x > 1) {
+        e.x = ((e.x % 1) + 1) % 1
+        e.trail.clear()
+      }
       if (e.y < -0.06) {
         e.y = 1.04
         e.x = this.random()
+        e.trail.clear()
       }
+      if (sample) e.trail.push(e.x, e.y)
 
       const heat = Math.max(0, Math.min(1, e.y)) // hot at the bottom
       const topFade = Math.max(0, Math.min(1, e.y * 5 + 0.15)) // die out near the top
@@ -284,6 +404,15 @@ class EmbersRenderer implements MotifRenderer {
       drawSprite(ctx, cool, sx, sy, size * 0.8, a * (1 - heat))
     }
     ctx.globalAlpha = 1
+    drawTrails(
+      ctx,
+      view,
+      this.embers,
+      this.embers.length,
+      params.glowColor,
+      1.4 * TRAIL.alpha * (EMBERS.alphaBase + frame.level * EMBERS.alphaLevel) * alpha,
+      3.2 * sizeMul * px,
+    )
 
     // Heat bed along the bottom edge.
     const bedAlpha =

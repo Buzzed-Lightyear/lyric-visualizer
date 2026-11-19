@@ -81,8 +81,6 @@ export class Scene {
   private seekSettle = false
   /** Extra accent injected by a rising transition; decays like a beat. */
   private boost = 0
-  /** Accumulated trail fade waiting for a flush (see SCENE.trailFlushAlpha). */
-  private fadePending = 0
 
   constructor(canvas: HTMLCanvasElement, random: Random) {
     this.canvas = canvas
@@ -127,12 +125,12 @@ export class Scene {
     const to = this.incoming
 
     // Background: flat for the neutral drift look, gradient + vignette for
-    // semantic sections, blended across the crossfade. Trails still work
-    // because this is the per-frame fade fill.
+    // semantic sections, blended across the crossfade. Repainted opaquely
+    // every frame; trails are drawn explicitly by the renderers.
     const bgColor = mixRgb(from.background, (to ?? from).background, x)
     const bgGlow = mixRgb(from.glowColor, (to ?? from).glowColor, x)
     const strength = mix(from.motif === 'drift' ? 0 : 1, (to ?? from).motif === 'drift' ? 0 : 1, x)
-    this.drawBackground(bgColor, bgGlow, strength, dt)
+    this.drawBackground(bgColor, bgGlow, strength)
 
     ctx.globalCompositeOperation = 'lighter'
     if (!to) {
@@ -210,22 +208,14 @@ export class Scene {
     this.seekSettle = false
   }
 
-  private drawBackground(bg: Rgb, glow: Rgb, strength: number, dt: number): void {
+  private drawBackground(bg: Rgb, glow: Rgb, strength: number): void {
     const { ctx } = this
     const { w, h } = this.view
-    // Accumulate the fade and flush it at a higher alpha: a tiny per-frame
-    // alpha stalls on 8-bit rounding and leaves permanent ghost trails.
-    const frameFade = 1 - Math.exp(-SCENE.trailFade * dt)
-    this.fadePending = 1 - (1 - this.fadePending) * (1 - frameFade)
-    if (this.fadePending < SCENE.trailFlushAlpha) return
-    const fade = this.fadePending
-    this.fadePending = 0
     const top = mixRgb(bg, [0, 0, 0], BG.topDarken * strength)
     const bottom = mixRgb(bg, glow, BG.bottomGlowMix * strength)
     const gradient = ctx.createLinearGradient(0, 0, 0, h)
     gradient.addColorStop(0, rgba(top, 1))
     gradient.addColorStop(1, rgba(bottom, 1))
-    ctx.globalAlpha = fade
     ctx.fillStyle = gradient
     ctx.fillRect(0, 0, w, h)
     if (strength > 0.01) {
@@ -236,7 +226,6 @@ export class Scene {
       ctx.fillStyle = vignette
       ctx.fillRect(0, 0, w, h)
     }
-    ctx.globalAlpha = 1
   }
 
   /** Bars for the five AudioFrame values plus the current semantic state. */

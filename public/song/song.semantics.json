@@ -87,7 +87,7 @@
       "label": "verse 4",
       "energy": 0.65,
       "mood": "brooding",
-      "palette": ["#10101c", "#b5582e", "#cdd6ea", "#e03535"],
+      "palette": ["#120f1a", "#8f3e4e", "#cdd6ea", "#e03535"],
       "imagery": ["smoke", "flag", "city-night"]
     },
     {
