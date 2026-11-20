@@ -1,5 +1,31 @@
 {
-  "version": 2,
+  "version": 3,
+  "look": {
+    "description": "Black, blood red and bone white and nothing else: a riot poster set in motion. Hard-edged, percussive and stripped bare, with red as the only color on screen — an industrial stomp that never softens, it only comes closer and gets louder.",
+    "palette": [
+      "#050505",
+      "#8b0d14",
+      "#c41e1e",
+      "#ff3b1f",
+      "#3a3a40",
+      "#f2f2f2"
+    ],
+    "voices": {
+      "main": "block",
+      "accent": "condensed"
+    },
+    "presets": {
+      "intro": "flexi + amandio c - organic12-3d-2.milk",
+      "verse 1": "Flexi - blame hexcollie twice",
+      "chorus": "amandio c - salty beats - spiral",
+      "bridge": "flexi - meta4free",
+      "verse 2": "AdamFx 2 Geiss -Somewhat Distort Me 3_1",
+      "outro": "Rovastar + Geiss - Snapshot Of Space (LSB mix)"
+    },
+    "presetsFrom": "model",
+    "source": "agent",
+    "partial": true
+  },
   "sections": [
     {
       "start": 0,

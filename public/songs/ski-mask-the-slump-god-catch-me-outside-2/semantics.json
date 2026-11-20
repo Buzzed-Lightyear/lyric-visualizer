@@ -1,5 +1,30 @@
 {
-  "version": 2,
+  "version": 3,
+  "look": {
+    "description": "A neon cartoon chase after dark: violet haze, electric blue and toxic green, snapping from one saturated color to the next. Fast, bouncy and mischievous rather than heavy — the menace is a grin — and everything moves as if it were being drawn at double speed.",
+    "palette": [
+      "#05060f",
+      "#8a5cff",
+      "#1d4ed8",
+      "#22c55e",
+      "#b0121b",
+      "#c7d2fe"
+    ],
+    "voices": {
+      "main": "marker",
+      "accent": "block"
+    },
+    "presets": {
+      "intro": "444",
+      "verse 1": "_Mig_028",
+      "chorus": "Hexcollie - Nautalisk - mash0000 - but officer, my fingerprint always changes",
+      "verse 2": "LuxXx - iWhat Happened Right After I Ate That Toxic Waste beta ii",
+      "outro": "_Krash + Eo.S. - Photographic Sentinel"
+    },
+    "presetsFrom": "model",
+    "source": "agent",
+    "partial": true
+  },
   "sections": [
     {
       "start": 0,

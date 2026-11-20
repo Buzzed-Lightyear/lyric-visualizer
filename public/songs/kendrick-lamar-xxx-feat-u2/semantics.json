@@ -1,5 +1,35 @@
 {
-  "version": 2,
+  "version": 3,
+  "look": {
+    "description": "One flag seen twice at night: first lit by sirens and street fire, then by cold stars. The look is the split itself — red-orange heat that climbs to a blaze, a hard cut to a hollow grey pause, then a blue-and-gold hymn — with red and blue alternating like patrol lights and never blending.",
+    "palette": [
+      "#0a0d1a",
+      "#e03535",
+      "#e0763a",
+      "#d9a441",
+      "#8fc1ff",
+      "#cfd9ee"
+    ],
+    "voices": {
+      "main": "mono",
+      "accent": "serif"
+    },
+    "presets": {
+      "intro": "flexi + fishbrain - witchcraft [complex terraforming]",
+      "verse 1": "Flexi - wild at range",
+      "hook": "Geiss - Reaction Diffusion 3 (Lichen Mix)",
+      "verse 2": "martin - city of shadows",
+      "verse 3": "Martin - cool morning",
+      "climax": "beta106i - Brilliance (Space-Time Breaking) - mash0000 - it′s 2009 and you haven′t replaced your analog tv with digital",
+      "aside": "suksma - heretical crosscut playpen",
+      "transition": "Rovastar & Loadus + Zylot - FractalDrop (Spark Machine v2.0)",
+      "chorus": "Zylot - Star Ornament",
+      "verse 4": "Studio Music and Unchained - Rapid Alteration"
+    },
+    "presetsFrom": "model",
+    "source": "agent",
+    "partial": true
+  },
   "sections": [
     {
       "start": 0,

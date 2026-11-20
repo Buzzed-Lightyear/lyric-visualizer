@@ -1,5 +1,30 @@
 {
-  "version": 2,
+  "version": 3,
+  "look": {
+    "description": "A torchlit procession crossing a city at night: gold and ember-orange carried on near-black, light that advances in ranks instead of exploding. It should move like a march — steady and forward — hardening to gunmetal in the middle and cooling to blue-and-gold prayer at the end.",
+    "palette": [
+      "#0b0a0f",
+      "#c9a227",
+      "#ff6a00",
+      "#b22222",
+      "#8a8f99",
+      "#3a4a7a"
+    ],
+    "voices": {
+      "main": "serif",
+      "accent": "block"
+    },
+    "presets": {
+      "intro": "martin - ghost city",
+      "verse 1": "11",
+      "chorus": "martin - The Bridge of Khazad-Dum",
+      "verse 2": "suksma - water cooled red uranium vs dotes - freeenergynow.net",
+      "verse 3": "Stahlregen + martin + others - Psychedelic Metal Flower"
+    },
+    "presetsFrom": "model",
+    "source": "agent",
+    "partial": true
+  },
   "sections": [
     {
       "start": 0,

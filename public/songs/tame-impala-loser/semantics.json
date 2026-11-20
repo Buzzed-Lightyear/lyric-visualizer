@@ -1,5 +1,32 @@
 {
-  "version": 2,
+  "version": 3,
+  "look": {
+    "description": "A sunset that has already gone: dusty rose, faded orchid and peach over tired purple, like a photograph left too long in the sun. Slow, sagging and soft-focus — things drift down and settle instead of hitting — and by the end the color has drained into grey fog.",
+    "palette": [
+      "#0b0a1a",
+      "#6a4c93",
+      "#c06c84",
+      "#f28482",
+      "#f2cc8f",
+      "#4a4e69"
+    ],
+    "voices": {
+      "main": "air",
+      "accent": "marker"
+    },
+    "presets": {
+      "intro": "martin - sunset over the river",
+      "verse 1": "fiShbRaiN + Flexi - witchcraft 2.0",
+      "chorus": "suksma - nip tuck",
+      "verse 2": "Rovastar + Flexi - Hurricane Nightmare (Moebius Mix)",
+      "bridge": "Krash + Illusion - Spiral Movement",
+      "verse 3": "amandio c - flashy thing",
+      "outro": "_Geiss - Brain Zoom 3 (Color Emboss Mix)"
+    },
+    "presetsFrom": "model",
+    "source": "agent",
+    "partial": true
+  },
   "sections": [
     {
       "start": 0,
