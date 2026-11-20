@@ -15,8 +15,11 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import type { LyricLine } from '../src/lrc'
 import {
   choosePresets,
+  reviewPresets,
   type LibraryLook,
   type PresetChoiceResult,
+  type ReviewResult,
+  type StripSource,
 } from '../src/lookGen'
 import type { Feedback } from '../src/presetPick'
 import { parseSemantics } from '../src/semantics'
@@ -64,7 +67,26 @@ export function apiAsk(): Ask {
         model,
         max_tokens: 32000,
         output_config: { format: zodOutputFormat(schema), effort: 'high' },
-        messages: [{ role: 'user', content: prompt }],
+        messages: [
+          {
+            role: 'user',
+            content:
+              typeof prompt === 'string'
+                ? prompt
+                : prompt.map((part) =>
+                    part.type === 'text'
+                      ? { type: 'text' as const, text: part.text }
+                      : {
+                          type: 'image' as const,
+                          source: {
+                            type: 'base64' as const,
+                            media_type: part.mediaType,
+                            data: part.data,
+                          },
+                        },
+                  ),
+          },
+        ],
       })
       .finalMessage()
     if (response.stop_reason === 'refusal') {
@@ -91,21 +113,25 @@ export interface GenerateResult {
   errors: string[]
   /** How the preset set was chosen; null when there is no document. */
   presets: PresetChoiceResult | null
+  /** What the image review did; null when there is no document. */
+  review: ReviewResult | null
 }
 
 /**
- * A whole song: first the semantics and the look, then — with the look
- * written — the model's choice of one preset per section label.
+ * A whole song: first the semantics and the look; then — with the look
+ * written — the model's choice of one preset per section label from the
+ * text list; then, when the strips are on disk, its review of that set
+ * against the pixels.
  */
 export async function generateSemantics(
   input: ExtractionInput,
   lrcLines: readonly LyricLine[],
-  context: { feedback: Feedback; library: readonly LibraryLook[] },
+  context: { feedback: Feedback; library: readonly LibraryLook[]; strips?: StripSource },
   log: (message: string) => void = console.log,
   ask: Ask = apiAsk(),
 ): Promise<GenerateResult> {
   const { doc, errors } = await extractSemantics(input, lrcLines, ask, log)
-  if (!doc) return { doc: null, errors, presets: null }
+  if (!doc) return { doc: null, errors, presets: null, review: null }
   const sections = parseSemantics(doc).semantics?.sections ?? []
   log('choosing the scenes...')
   const presets = await choosePresets(
@@ -120,7 +146,22 @@ export async function generateSemantics(
     ask,
     log,
   )
-  doc.look.presets = presets.presets
+  log('reviewing the scenes against their strips...')
+  const review = await reviewPresets(
+    {
+      title: input.title,
+      artist: input.artist,
+      look: doc.look,
+      sections,
+      presets: presets.presets,
+      feedback: context.feedback,
+    },
+    context.strips ?? (() => null),
+    ask,
+    log,
+  )
+  doc.look.presets = review.presets
   doc.look.presetsFrom = presets.from
-  return { doc, errors: [], presets }
+  doc.look.review = { ran: review.ran, swapped: review.swaps.map((swap) => swap.label) }
+  return { doc, errors: [], presets, review }
 }

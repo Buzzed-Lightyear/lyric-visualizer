@@ -43,7 +43,9 @@ export interface SongReport {
   /** Section label -> automatic pick (saved choices left out). */
   presets: Record<string, string>
   distinctPresets: number
-  /** Labels where the owner's saved choice plays instead. */
+  /** The image review: null when the look carries no record of one. */
+  review: { ran: boolean; swapped: string[] } | null
+  /** Labels where the owner's kept choice plays instead. */
   overrides: Record<string, string>
   voices: { main: string[]; accent: string[] }
   voicesFrom: 'look' | 'mood anchors'
@@ -114,6 +116,7 @@ function songReport(
     presetsFrom: look && fromLook > 0 && look.presetsFrom !== 'scorer' ? 'model' : 'scorer',
     presets,
     distinctPresets: unique(Object.values(presets)).length,
+    review: look?.review ?? null,
     overrides,
     voices: look
       ? {
@@ -207,9 +210,17 @@ export function formatLibrary(title: string, report: LibraryReport): string[] {
       `    presets: ${song.distinctPresets} distinct for ${labels} labels (chosen by the ${song.presetsFrom}` +
         `${song.look === 'partial' ? '; look is partial' : ''})`,
     )
+    if (song.review) {
+      out.push(
+        song.review.ran
+          ? `    review:  the strips were looked at; ${song.review.swapped.length} swapped` +
+              (song.review.swapped.length > 0 ? ` (${song.review.swapped.join(', ')})` : '')
+          : '    review:  did not run (chosen from text only)',
+      )
+    }
     const overridden = Object.keys(song.overrides).length
     if (overridden > 0) {
-      out.push(`    your saved choices play instead on ${overridden} of ${labels} labels`)
+      out.push(`    your kept choices play instead on ${overridden} of ${labels} labels`)
     }
     out.push(
       `    voices:  main ${song.voices.main.join(', ')} / accent ${song.voices.accent.join(', ')} (from ${song.voicesFrom})`,

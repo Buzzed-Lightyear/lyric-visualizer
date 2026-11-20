@@ -6,11 +6,31 @@
  * stay the unit for layout. A legibility assist spring ramps in before
  * the settle deadline instead of a hard clamp. Seeded and fixed-step
  * friendly; driven only by (AudioFrame, TextParams, dt) plus the line.
+ *
+ * Readability comes from the pixels behind the text (src/legibility.ts):
+ * each line is set light or dark when it enters, and a text-hugging
+ * backing in the opposite tone is drawn only as strongly as the local
+ * background requires. The old global scrim is one switch away
+ * (LEGIBLE.oldScrim) for A/B.
  */
 
 import type { AudioFrame } from './audioMath'
 import { GESTURES, type GestureAssignment } from './gestures'
 import { focusFeasible, LAYOUTS, type AnchorName, type LayoutName } from './layout'
+import {
+  backingNeeded,
+  BLACK_STATS,
+  choosePolarity,
+  easeBacking,
+  pickAccent,
+  regionStats,
+  relativeLuminance,
+  textTones,
+  type Backdrop,
+  type Polarity,
+  type Region,
+  type RegionStats,
+} from './legibility'
 import type { Rgb, TextParams } from './mapping'
 import { rgba } from './motifs'
 import { estimateWordOnsets } from './onsets'
@@ -28,7 +48,7 @@ import {
 } from './parts'
 import type { Random } from './random'
 import { advance, newBody, type Body, type Forces, type Home, type SpringConfig } from './springs'
-import { ASSIST, EXIT_T, GESTURE_T, HOLD_T, LEGIBILITY, TEXT, TYPESET } from './tuning'
+import { ASSIST, EXIT_T, GESTURE_T, HOLD_T, LEGIBILITY, LEGIBLE, TEXT, TYPESET } from './tuning'
 import { allFontsLoaded, fontString, makeMeasure, typeStyleFor, VOICES, type VoiceName } from './voices'
 
 export interface TextLine {
@@ -59,6 +79,23 @@ export interface TextInput {
   time: number
   /** Audition overrides; null/undefined = the mapping decides. */
   overrides: PartOverrides
+  /**
+   * A sample of the background behind the text (src/backdrop.ts).
+   * Null/undefined = a black background.
+   */
+  backdrop?: Backdrop | null
+}
+
+/** What the layer decided about one line's readability, for the overlay and the harness. */
+export interface LegibilityState {
+  /** 'scrim' = the old mode: global scrim, fixed colors, no backing. */
+  mode: 'adaptive' | 'scrim'
+  polarity: Polarity | null
+  /** Backing strength now, 0..1: the strongest any word of the line needs. */
+  strength: number
+  /** Whether focus words carry a palette accent on this line. */
+  accent: boolean
+  stats: RegionStats
 }
 
 /** Tripwire: counts any glyph drawn before every face was loaded. */
@@ -98,6 +135,14 @@ interface Word {
   squash: number
   prevX: number
   prevY: number
+  /** Where the word sits, for reading the background right behind it. */
+  region: Region
+  /** Backing strength this word needs, as a base word and as an accent word. */
+  backing: number
+  accentBacking: number
+  stats: RegionStats
+  /** The backdrop sample `stats` was read from. */
+  statsVersion: number
 }
 
 interface LineParts {
@@ -107,8 +152,30 @@ interface LineParts {
   voice: VoiceName
   layout: LayoutName
   anchor: AnchorName
+  colors: LineColors
+}
+
+/**
+ * One line's colors. Shared by reference between the line, its
+ * per-frame copies and its exit, so the eased backing strength lives in
+ * one place.
+ */
+interface LineColors {
+  /** The base text color. */
   fill: Rgb
+  /** The accent color; equals `fill` when no accent passed. */
   accent: Rgb
+  /** Adaptive mode: focus words take the accent, not only the sung word. */
+  accentFocus: boolean
+  /** The backing tone; null in the old scrim mode (no backing). */
+  back: Rgb | null
+  polarity: Polarity | null
+  /** Where the line sits: what the polarity and the accent were decided on. */
+  region: Region
+  tint: Rgb
+  stats: RegionStats
+  /** The backdrop sample `stats` was read from. */
+  statsVersion: number
 }
 
 /** The parts one word actually runs: the line's, or its gesture's. */
@@ -146,6 +213,8 @@ interface ShatterLetter {
   fontSize: number
   voice: VoiceName
   fill: Rgb
+  back: Rgb | null
+  backing: number
   start: number
 }
 
@@ -185,6 +254,11 @@ export class TextLayer {
   private lastLine: TextLine | null = null
   private lastBeat = 0
   private waveBoost = 0
+  /** The last line's polarity: the next line keeps it unless clearly worse. */
+  private polarity: Polarity | null = null
+  private lastParts: LineParts | null = null
+  /** True while drawing the glyph mask for the harness (plain white glyphs). */
+  private maskMode = false
 
   constructor(canvas: HTMLCanvasElement, rng: Random) {
     this.canvas = canvas
@@ -212,9 +286,12 @@ export class TextLayer {
     const params = input.params
     if (render) {
       ctx.clearRect(0, 0, w, h)
-      // Scrim + palette tint keep text readable over any background.
-      ctx.fillStyle = `rgba(0, 0, 0, ${params.scrim})`
-      ctx.fillRect(0, 0, w, h)
+      // The old mode darkens the whole background; the new one leaves it
+      // alone and backs only the text (see drawGlyph).
+      if (LEGIBLE.oldScrim) {
+        ctx.fillStyle = `rgba(0, 0, 0, ${params.scrim})`
+        ctx.fillRect(0, 0, w, h)
+      }
       ctx.fillStyle = rgba(params.tint, TEXT.tintStrength)
       ctx.fillRect(0, 0, w, h)
     }
@@ -229,6 +306,8 @@ export class TextLayer {
     }
 
     const parts = this.effectiveParts(input)
+    this.lastParts = parts
+    if (this.parts) this.updateBacking(this.parts.colors, input.backdrop ?? null, dt)
     const beatOnset = frame.beat >= 0.95 && this.lastBeat < 0.95
     this.lastBeat = frame.beat
     this.waveBoost *= Math.exp(-HOLD_T.wave.boostDecay * dt)
@@ -238,10 +317,167 @@ export class TextLayer {
     this.stepOutgoing(input.time, dt, beatOnset)
     this.stepShatter(input.time, dt)
 
-    if (render) {
-      this.drawOutgoing(input.time)
-      this.drawShatter(input.time)
-      if (parts) this.drawCurrent(input.time, params, parts)
+    if (render) this.render(input.time, parts)
+  }
+
+  /**
+   * Backings first, then glyphs: a neighbour's halo must never be drawn
+   * over a letter that is already on the canvas.
+   */
+  private render(time: number, parts: LineParts | null): void {
+    for (const pass of ['back', 'fill'] as const) {
+      this.drawOutgoing(time, pass)
+      this.drawShatter(time, pass)
+      if (parts) this.drawCurrent(time, parts, pass)
+    }
+  }
+
+  /**
+   * Harness only: redraw the current state as plain white glyphs on a
+   * clear canvas (no wash, no backing), without stepping anything. The
+   * contrast check uses it to tell glyph pixels from their surround.
+   */
+  drawGlyphMask(time: number): void {
+    const { w, h } = this.view
+    this.ctx.clearRect(0, 0, w, h)
+    if (!this.fontsReady) return
+    this.maskMode = true
+    try {
+      this.drawOutgoing(time, 'fill')
+      this.drawShatter(time, 'fill')
+      if (this.lastParts) this.drawCurrent(time, this.lastParts, 'fill')
+    } finally {
+      this.maskMode = false
+    }
+  }
+
+  /** What was decided for the current line (null when no line is up). */
+  legibility(): LegibilityState | null {
+    const colors = this.parts?.colors
+    if (!colors) return null
+    return {
+      mode: colors.back ? 'adaptive' : 'scrim',
+      polarity: colors.polarity,
+      strength: this.words.reduce((most, word) => Math.max(most, word.backing), 0),
+      accent: colors.accent !== colors.fill,
+      stats: colors.stats,
+    }
+  }
+
+  // --- readability -----------------------------------------------------------
+
+  /**
+   * Read the background under a line or a word (through the tint the
+   * layer paints), once per backdrop sample.
+   */
+  private readBackground(
+    target: { region: Region; stats: RegionStats; statsVersion: number },
+    tint: Rgb,
+    backdrop: Backdrop | null,
+  ): RegionStats {
+    const version = backdrop?.version ?? 0
+    if (version !== target.statsVersion) {
+      target.stats = regionStats(backdrop, target.region, [
+        { color: tint, alpha: TEXT.tintStrength },
+      ])
+      target.statsVersion = version
+    }
+    return target.stats
+  }
+
+  /** The backing some text needs over `stats`, as base text and as accent text. */
+  private backingWanted(colors: LineColors, stats: RegionStats): { base: number; accent: number } {
+    if (!colors.back || !colors.polarity) return { base: 0, accent: 0 }
+    const back = relativeLuminance(colors.back)
+    const base = backingNeeded(
+      colors.polarity,
+      stats,
+      relativeLuminance(colors.fill),
+      back,
+      LEGIBLE.targetContrast,
+    )
+    if (colors.accent === colors.fill) return { base, accent: base }
+    // An accent word never drops below the floor, whatever the background does.
+    const accent = Math.max(
+      base,
+      backingNeeded(colors.polarity, stats, relativeLuminance(colors.accent), back, LEGIBLE.floor),
+    )
+    return { base, accent }
+  }
+
+  /**
+   * Decide a new line's colors from what is behind it, and hold them:
+   * light or dark text, and whether a palette accent may be used.
+   */
+  private lineColors(params: TextParams, region: Region, backdrop: Backdrop | null): LineColors {
+    const colors: LineColors = {
+      fill: params.fill,
+      accent: params.accent,
+      accentFocus: false,
+      back: null,
+      polarity: null,
+      region,
+      tint: params.tint,
+      stats: BLACK_STATS,
+      statsVersion: -1,
+    }
+    if (LEGIBLE.oldScrim) return colors
+
+    const stats = this.readBackground(colors, colors.tint, backdrop)
+    const tones = textTones(params.fill, params.background)
+    const lums = { light: relativeLuminance(tones.light), dark: relativeLuminance(tones.dark) }
+    const polarity = choosePolarity(
+      this.polarity,
+      stats,
+      lums,
+      LEGIBLE.targetContrast,
+      LEGIBLE.hysteresis,
+    )
+    this.polarity = polarity
+    colors.polarity = polarity
+    colors.fill = polarity === 'light' ? tones.light : tones.dark
+    colors.back = polarity === 'light' ? tones.dark : tones.light
+    colors.accent = colors.fill
+    colors.accentFocus = true
+    const accent = pickAccent(
+      params.accents,
+      stats,
+      relativeLuminance(colors.back),
+      this.backingWanted(colors, stats).base,
+      LEGIBLE.floor * LEGIBLE.accentMargin,
+    )
+    if (accent) colors.accent = accent
+    return colors
+  }
+
+  /**
+   * Size each word's backing from the background right behind that
+   * word. A new line enters with the backing it needs (`ease` false);
+   * after that the strength eases, fast up and slow down.
+   */
+  private updateBacking(
+    colors: LineColors,
+    backdrop: Backdrop | null,
+    dt: number,
+    ease = true,
+  ): void {
+    if (!colors.back) return
+    this.readBackground(colors, colors.tint, backdrop)
+    for (const word of this.words) {
+      const wanted = this.backingWanted(colors, this.readBackground(word, colors.tint, backdrop))
+      if (!ease) {
+        word.backing = wanted.base
+        word.accentBacking = wanted.accent
+        continue
+      }
+      word.backing = easeBacking(word.backing, wanted.base, dt, LEGIBLE.attack, LEGIBLE.release)
+      word.accentBacking = easeBacking(
+        word.accentBacking,
+        wanted.accent,
+        dt,
+        LEGIBLE.attack,
+        LEGIBLE.release,
+      )
     }
   }
 
@@ -257,8 +493,7 @@ export class TextLayer {
       voice: o.voice ?? this.parts.voice,
       layout: this.parts.layout, // layout is fixed at build
       anchor: this.parts.anchor,
-      fill: this.parts.fill,
-      accent: this.parts.accent,
+      colors: this.parts.colors,
     }
   }
 
@@ -332,6 +567,15 @@ export class TextLayer {
       anchor: params.anchor,
     })
 
+    // Where the line will sit: the box around its slots, padded.
+    const region: Region = { x0: 1, y0: 1, x1: 0, y1: 0 }
+    for (const slot of slots) {
+      const pad = slot.h * LEGIBLE.regionPad
+      region.x0 = Math.min(region.x0, (slot.x - slot.w / 2 - pad) / w)
+      region.x1 = Math.max(region.x1, (slot.x + slot.w / 2 + pad) / w)
+      region.y0 = Math.min(region.y0, (slot.y - slot.h / 2 - pad) / h)
+      region.y1 = Math.max(region.y1, (slot.y + slot.h / 2 + pad) / h)
+    }
     this.parts = {
       entrance: params.entrance,
       hold: params.hold,
@@ -339,8 +583,7 @@ export class TextLayer {
       voice: voiceName,
       layout,
       anchor: params.anchor,
-      fill: params.fill,
-      accent: params.accent,
+      colors: this.lineColors(params, region, input.backdrop ?? null),
     }
     slots.forEach((slot, i) => {
       const x = slot.x / w
@@ -368,8 +611,19 @@ export class TextLayer {
         squash: 0,
         prevX: x,
         prevY: y,
+        region: {
+          x0: (slot.x - slot.w / 2 - slot.h * LEGIBLE.regionPad) / w,
+          x1: (slot.x + slot.w / 2 + slot.h * LEGIBLE.regionPad) / w,
+          y0: (slot.y - slot.h / 2 - slot.h * LEGIBLE.regionPad) / h,
+          y1: (slot.y + slot.h / 2 + slot.h * LEGIBLE.regionPad) / h,
+        },
+        backing: 0,
+        accentBacking: 0,
+        stats: BLACK_STATS,
+        statsVersion: -1,
       })
     })
+    this.updateBacking(this.parts.colors, input.backdrop ?? null, 0, false)
   }
 
   private ensureLetters(word: Word, voiceName: VoiceName, spread = 1): Letter[] {
@@ -609,7 +863,9 @@ export class TextLayer {
           vrot: (this.rng() - 0.5) * S.spin,
           fontSize: word.fontSize,
           voice: parts.voice,
-          fill: parts.fill,
+          fill: parts.colors.fill,
+          back: parts.colors.back,
+          backing: word.backing,
           start: time + this.lingerOf(word),
         })
       })
@@ -663,7 +919,8 @@ export class TextLayer {
 
   // --- drawing ---------------------------------------------------------------
 
-  private drawCurrent(time: number, _params: TextParams, parts: LineParts): void {
+  private drawCurrent(time: number, parts: LineParts, pass: 'back' | 'fill'): void {
+    const colors = parts.colors
     let active = -1
     this.words.forEach((word, i) => {
       if (word.entered && word.exitedAt === null && word.onset <= time) active = i
@@ -676,7 +933,12 @@ export class TextLayer {
         if (alpha <= 0) return
       }
       const wp = this.wordParts(word, parts)
-      const fill = i === active ? parts.accent : parts.fill
+      // The word being sung takes the accent; with adaptive text so do
+      // the focus words (the accent equals the base color when no
+      // palette color cleared the contrast floor).
+      const accented = i === active || (colors.accentFocus && word.focusWord)
+      const fill = accented ? colors.accent : colors.fill
+      const backing = accented ? word.accentBacking : word.backing
       const bold = word.focusWord ? TYPESET.focusBold : 0
       const letterMode =
         (wp.entrance.letterwise && time < word.onset + wp.entrance.duration) ||
@@ -692,6 +954,9 @@ export class TextLayer {
             squash: 0,
             bold,
             echo: wp.echo,
+            back: colors.back,
+            backing,
+            pass,
           })
         }
       } else {
@@ -702,29 +967,36 @@ export class TextLayer {
           ghostFrom: { x: word.prevX, y: word.prevY },
           bold,
           echo: wp.echo,
+          back: colors.back,
+          backing,
+          pass,
         })
       }
     })
   }
 
-  private drawOutgoing(time: number): void {
+  private drawOutgoing(time: number, pass: 'back' | 'fill'): void {
     const out = this.outgoing
     if (!out) return
     const elapsed = time - out.start
+    const colors = out.parts.colors
     for (const { word, motion } of out.words) {
       const alpha = out.snap
         ? 1
         : Math.max(0, 1 - Math.max(0, elapsed - motion.delay) / TEXT.exitSec)
       if (alpha <= 0) continue
-      this.drawGlyph(word.text, word.body, word.fontSize, out.parts.voice, out.parts.fill, alpha, {
+      this.drawGlyph(word.text, word.body, word.fontSize, out.parts.voice, colors.fill, alpha, {
         pivot: out.parts.hold === 'pendulum',
         deform: null,
         squash: 0,
+        back: colors.back,
+        backing: word.backing,
+        pass,
       })
     }
   }
 
-  private drawShatter(time: number): void {
+  private drawShatter(time: number, pass: 'back' | 'fill'): void {
     const S = EXIT_T.shatter
     for (const l of this.shatter) {
       const alpha = Math.min(1, Math.max(0, 1 - (time - l.start) / S.fadeSec))
@@ -733,6 +1005,9 @@ export class TextLayer {
         pivot: false,
         deform: null,
         squash: 0,
+        back: l.back,
+        backing: l.backing,
+        pass,
       })
     }
   }
@@ -751,11 +1026,21 @@ export class TextLayer {
       ghostFrom?: { x: number; y: number }
       bold?: number
       echo?: number
+      /** The backing tone and how strongly this glyph needs it (0..1). */
+      back: Rgb | null
+      backing: number
+      pass: 'back' | 'fill'
     },
   ): void {
     if (!this.fontsReady) {
-      fontGate.violations++
+      if (opts.pass === 'fill') fontGate.violations++
       return
+    }
+    const backPass = opts.pass === 'back'
+    if (backPass && (!opts.back || opts.backing < LEGIBLE.minStrength || this.maskMode)) return
+    if (this.maskMode) {
+      fill = [255, 255, 255]
+      alpha = 1
     }
     const { ctx } = this
     const { w, h } = this.view
@@ -765,7 +1050,7 @@ export class TextLayer {
     const inkShift = (VOICES[voiceName].tracking * fontSize) / 2
 
     // Optional ghost trails at high speed (off by default).
-    if (TEXT.ghostTrails > 0 && speed > TEXT.ghostMinSpeed && opts.ghostFrom) {
+    if (!backPass && !this.maskMode && TEXT.ghostTrails > 0 && speed > TEXT.ghostMinSpeed && opts.ghostFrom) {
       const gx = opts.ghostFrom.x
       const gy = opts.ghostFrom.y
       for (const [t, a] of [
@@ -786,7 +1071,7 @@ export class TextLayer {
     }
 
     // Echo gesture: expanding rings behind the word.
-    if (opts.echo && opts.echo > 0) {
+    if (!backPass && !this.maskMode && opts.echo && opts.echo > 0) {
       for (const [grow, a] of [
         [1.18, 0.28],
         [1.4, 0.12],
@@ -836,11 +1121,27 @@ export class TextLayer {
     this.setFont(voiceName, fontSize)
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
+    const bold = opts.bold && opts.bold > 0 ? opts.bold * fontSize : 0
+    if (backPass) {
+      // The backing hugs the glyphs: a wide faint ring under a tight
+      // stronger one, in the tone opposite the text. Its strength is
+      // exactly what the background behind this line asked for.
+      const strength = Math.min(1, opts.backing)
+      ctx.lineJoin = 'round'
+      ctx.strokeStyle = rgba(opts.back!, alpha * strength * LEGIBLE.outerAlpha)
+      ctx.lineWidth = LEGIBLE.outerWidth * fontSize + bold
+      ctx.strokeText(text, inkShift, 0)
+      ctx.strokeStyle = rgba(opts.back!, alpha * strength)
+      ctx.lineWidth = LEGIBLE.innerWidth * fontSize + bold
+      ctx.strokeText(text, inkShift, 0)
+      ctx.restore()
+      return
+    }
     ctx.fillStyle = rgba(fill, alpha)
     // Focus words are set heavier: a same-color stroke fattens the face.
-    if (opts.bold && opts.bold > 0) {
+    if (bold > 0) {
       ctx.strokeStyle = rgba(fill, alpha)
-      ctx.lineWidth = opts.bold * fontSize
+      ctx.lineWidth = bold
       ctx.lineJoin = 'round'
       ctx.strokeText(text, inkShift, 0)
     }

@@ -164,6 +164,18 @@ describe('libraryReport', () => {
     expect(libraryReport(songs(), false, catalog).readability).toEqual({ median: 0.6, lowest: 0.6 })
   })
 
+  it('carries the record of the image review', () => {
+    const library = songs()
+    library[0].look = look({ verse: 'amber', chorus: 'red' }, { review: { ran: true, swapped: ['chorus'] } })
+    library[1].look = look({ verse: 'blue', bridge: 'grey' }, { review: { ran: false, swapped: [] } })
+    const after = libraryReport(library, true, CATALOG)
+    expect(after.songs[0].review).toEqual({ ran: true, swapped: ['chorus'] })
+    const text = formatLibrary('AFTER', after).join('\n')
+    expect(text).toContain('review:  the strips were looked at; 1 swapped (chorus)')
+    expect(text).toContain('review:  did not run (chosen from text only)')
+    expect(libraryReport(songs(), true, CATALOG).songs[0].review).toBeNull()
+  })
+
   it('is deterministic and leaves the library untouched', () => {
     const library = songs()
     const snapshot = JSON.stringify(library)
@@ -192,7 +204,7 @@ describe('the printed report', () => {
     expect(text).toContain('4 section picks use 4 of 6 usable presets')
     expect(text).toContain('0 of 1 song pairs share at least one preset')
     expect(text).toContain('presets: 2 distinct for 2 labels (chosen by the model; look is partial)')
-    expect(text).toContain('your saved choices play instead on 1 of 2 labels')
+    expect(text).toContain('your kept choices play instead on 1 of 2 labels')
     expect(text).toContain('voices:  main serif / accent slab (from look)')
     expect(text).toContain('palette: #101010 #e0a040 #f4e2b8')
     expect(text).toContain('(every preset is used once)')

@@ -61,6 +61,12 @@ export interface SongLook {
   presets: Record<string, string>
   /** Who chose `presets`: the model, or the scorer after the model failed. */
   presetsFrom?: 'model' | 'scorer'
+  /**
+   * The image review: whether the model looked at the strips of its
+   * chosen presets (it runs only when the strips are on disk), and the
+   * section labels whose preset it replaced.
+   */
+  review?: { ran: boolean; swapped: string[] }
   /** Who wrote the look. */
   source?: 'api' | 'agent'
   /**
@@ -324,7 +330,7 @@ export function parseSemantics(input: unknown): {
 }
 
 const LOOK_KEYS = new Set([
-  'description', 'palette', 'voices', 'presets', 'presetsFrom', 'source', 'partial',
+  'description', 'palette', 'voices', 'presets', 'presetsFrom', 'review', 'source', 'partial',
 ])
 
 /** Validate the song-level look; pushes readable errors, returns the typed look. */
@@ -386,6 +392,27 @@ function parseLook(
   if (raw.presetsFrom !== undefined && raw.presetsFrom !== 'model' && raw.presetsFrom !== 'scorer') {
     errors.push('look: "presetsFrom" must be "model" or "scorer"')
   }
+  let review: SongLook['review']
+  if (raw.review !== undefined) {
+    const r = raw.review
+    if (
+      !isRecord(r) ||
+      typeof r.ran !== 'boolean' ||
+      !Array.isArray(r.swapped) ||
+      r.swapped.some((label: unknown) => typeof label !== 'string') ||
+      Object.keys(r).some((key) => key !== 'ran' && key !== 'swapped')
+    ) {
+      errors.push('look: "review" must be { ran: true|false, swapped: [section labels] }')
+    } else {
+      const labels = new Set(sections.map((section) => section.label))
+      const unknown = (r.swapped as string[]).filter((label) => sections.length > 0 && !labels.has(label))
+      if (unknown.length > 0) {
+        errors.push(`look: "review" names "${unknown[0]}", which is not a section label`)
+      } else {
+        review = { ran: r.ran, swapped: [...(r.swapped as string[])] }
+      }
+    }
+  }
   if (raw.source !== undefined && raw.source !== 'api' && raw.source !== 'agent') {
     errors.push('look: "source" must be "api" or "agent"')
   }
@@ -400,6 +427,7 @@ function parseLook(
     voices: { main: v.main, accent: v.accent },
     presets,
     ...(raw.presetsFrom !== undefined ? { presetsFrom: raw.presetsFrom as 'model' | 'scorer' } : {}),
+    ...(review ? { review } : {}),
     ...(raw.source !== undefined ? { source: raw.source as 'api' | 'agent' } : {}),
     ...(raw.partial === true ? { partial: true } : {}),
   }

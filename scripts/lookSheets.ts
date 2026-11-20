@@ -3,21 +3,30 @@
  *
  * One contact sheet per song under review/ (<slug>.jpg): the look
  * description, the palette swatches, the two type voices set in their
- * real faces, and for every section label the 4-frame strip of the
- * preset it plays (quiet, loud, on a beat, later) with its mood, axes
- * and scene.
+ * real faces, and for every section label the four frames of the preset
+ * it plays (quiet, loud, on a beat, later) with its mood, axes and
+ * scene.
  *
- * The strips come from `npm run catalog` (catalog-strips/, gitignored);
- * a label whose strip is missing says so instead of failing. The sheets
- * carry no lyric text — everything on them is in the committed files.
+ * Each frame carries the song title, drawn by the real text layer with
+ * its readability treatment (the dev harness page does the drawing, so
+ * this script starts the dev server), and the scene's measured contrast
+ * is printed beside it: the share of samples at 3:1 or better and the
+ * median ratio, for adaptive text and for the old scrim.
+ *
+ * The frames come from `npm run catalog` (catalog-strips/, gitignored)
+ * when the strip is on disk, and are rendered on the spot otherwise.
+ * The sheets carry no lyric text — everything on them is in the
+ * committed files.
  */
 
+import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { chromium, type Browser } from 'playwright'
 import { sectionAxes } from '../src/axes'
+import type { SceneReadability, SongReadability } from '../src/legibilityProbe'
 import { formatTime, parseMeta } from '../src/library'
 import { sectionsByLabel } from '../src/lookGen'
 import { sectionGrammar } from '../src/mapping'
@@ -81,7 +90,27 @@ function strip(name: string): string {
   return `<img src="${pathToFileURL(file).href}" alt="">`
 }
 
-function sheetHtml(slug: string): string | null {
+const percent = (share: number) => `${(share * 100).toFixed(1)}%`
+
+/** The four frames with the title drawn over them, and the measured contrast. */
+function sceneBlock(scene: SceneReadability): string {
+  const frames = (scene.images ?? [])
+    .map((src) => `<img src="${src}" alt="">`)
+    .join('')
+  const ok = scene.after.pass >= 0.95
+  return (
+    `<div class="frames">${frames}</div>` +
+    `<div class="contrast"><span class="${ok ? 'ok' : 'bad'}">adaptive text: ${percent(scene.after.pass)} of samples at 3:1 or better, ` +
+    `median ${scene.after.median.toFixed(1)}:1</span>` +
+    ` · ${scene.polarity ?? 'no'} text · backing ${scene.strength.map((s) => s.toFixed(2)).join(' / ')}` +
+    ` · accent ${scene.accent ? 'on' : 'off'}` +
+    `<span class="old"> · old scrim: ${percent(scene.before.pass)}, median ${scene.before.median.toFixed(1)}:1</span>` +
+    (scene.frames === 'rendered' ? ' · frames rendered now (no strip on disk)' : '') +
+    `</div>`
+  )
+}
+
+function sheetHtml(slug: string, readability: SongReadability | null): string | null {
   const { meta } = parseMeta(readJson(path.join(SONGS, slug, 'meta.json')))
   const { semantics } = parseSemantics(readJson(path.join(SONGS, slug, 'semantics.json')))
   if (!meta || !semantics) return null
@@ -95,7 +124,12 @@ function sheetHtml(slug: string): string | null {
   const lookState = !look
     ? 'no look (version 2 file): presets by the scorer, voices by mood word'
     : `look ${look.partial ? 'PARTIAL (written without lyrics; sections are still version 2)' : 'full (version 3)'}` +
-      ` · written by ${look.source ?? 'unknown'} · presets chosen by the ${look.presetsFrom ?? 'model'}`
+      ` · written by ${look.source ?? 'unknown'} · presets chosen by the ${look.presetsFrom ?? 'model'}` +
+      (look.review
+        ? look.review.ran
+          ? ` · reviewed against the strips: ${look.review.swapped.length} swapped`
+          : ' · strip review did not run'
+        : '')
 
   const voices = look
     ? (['main', 'accent'] as const)
@@ -137,6 +171,10 @@ function sheetHtml(slug: string): string | null {
       ]
       const chosen = pick?.chosen ?? null
       const entry = chosen ? CATALOG[chosen] : undefined
+      const measured = readability?.scenes.find(
+        (scene) => scene.label === section.label && scene.images?.length,
+      )
+      const swapped = look?.review?.swapped.includes(section.label) ?? false
       const override =
         saved && saved.source === 'saved' && saved.chosen && saved.chosen !== chosen
           ? `<div class="preset saved"><div class="pname"><span class="tag">your saved choice — plays instead</span> ${esc(saved.chosen)}</div>` +
@@ -151,8 +189,10 @@ function sheetHtml(slug: string): string | null {
         (section.scene ? `<p class="scene">${esc(section.scene)}</p>` : '') +
         `</div><div class="presets">` +
         (chosen
-          ? `<div class="preset"><div class="pname"><span class="tag">${pick!.source === 'look' ? 'look' : 'scorer'}</span> ${esc(chosen)}</div>` +
-            `<div class="pdesc">${esc(entry?.description ?? '')}</div>${strip(chosen)}</div>`
+          ? `<div class="preset"><div class="pname"><span class="tag">${pick!.source === 'look' ? 'look' : pick!.source === 'saved' ? 'kept' : 'scorer'}</span>` +
+            `${swapped ? '<span class="tag swap">swapped in review</span>' : ''} ${esc(chosen)}</div>` +
+            `<div class="pdesc">${esc(entry?.description ?? '')}</div>` +
+            `${measured && measured.preset === (saved?.chosen ?? chosen) ? sceneBlock(measured) : strip(chosen)}</div>`
           : '<div class="missing">no usable preset</div>') +
         override +
         `</div></section>`
@@ -195,6 +235,13 @@ ${FONT_CSS.map((href) => `<link rel="stylesheet" href="${href}">`).join('\n')}
   .preset { margin-bottom: 12px; }
   .preset img { display: block; width: 100%; border-radius: 5px; margin-top: 6px; }
   .preset.saved img { width: 66%; opacity: .92; }
+  .frames { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; margin-top: 6px; border-radius: 5px; overflow: hidden; }
+  .frames img { margin: 0; border-radius: 0; }
+  .contrast { font: 11.5px 'Space Mono', monospace; color: #b3b8c4; margin-top: 6px; }
+  .contrast .ok { color: #8fd6a4; }
+  .contrast .bad { color: #ff9a8a; }
+  .contrast .old { color: #7d8392; }
+  .tag.swap { background: #1f3a2a; color: #9fe0b4; }
   .pname { font: 12px 'Space Mono', monospace; color: #e6e8ee; }
   .pdesc { color: #9aa0ae; font-size: 12.5px; margin-top: 2px; }
   .tag { display: inline-block; background: #2a2e3a; color: #c8ccd6; border-radius: 3px; padding: 0 6px; margin-right: 6px; }
@@ -213,7 +260,7 @@ ${FONT_CSS.map((href) => `<link rel="stylesheet" href="${href}">`).join('\n')}
 <div class="label">sections</div>
 <div class="timeline">${timeline}</div>
 ${rows}
-<footer>Strip frames, left to right: quiet · loud · on a beat · later (npm run catalog, scripted test track). Generated by npm run look-sheets from the committed semantics; no lyric text.</footer>
+<footer>Frames, left to right: quiet · loud · on a beat · later (the scripted test track of npm run catalog). The title on each frame is drawn by the real text layer: it enters over the first frame and is held while the background changes. Contrast is measured between glyph pixels and their immediate surround, backing included. Generated by npm run look-sheets from the committed semantics; no lyric text.</footer>
 </main></body></html>`
 }
 
@@ -223,6 +270,22 @@ async function launchBrowser(): Promise<Browser> {
   } catch {
     return await chromium.launch({ channel: 'chrome' })
   }
+}
+
+const PORT = 5184
+const BASE = `http://localhost:${PORT}`
+
+async function waitForServer(url: string, timeoutMs = 30000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      if ((await fetch(url)).ok) return
+    } catch {
+      // not up yet
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  throw new Error(`dev server did not come up at ${url}`)
 }
 
 const slugs = fs
@@ -237,13 +300,30 @@ if (slugs.length === 0) {
 
 fs.mkdirSync(outDir, { recursive: true })
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'look-sheets-'))
-const browser = await launchBrowser()
+// The harness page draws the title over each frame with the real text layer.
+// One process (node running Vite's own entry), so killing it really stops the server.
+const server = spawn(
+  process.execPath,
+  ['node_modules/vite/bin/vite.js', '--port', String(PORT), '--strictPort'],
+  { stdio: 'ignore' },
+)
+let browser: Browser | null = null
+let exitCode = 0
 try {
+  await waitForServer(`${BASE}/harness.html`)
+  browser = await launchBrowser()
+  const harness = await browser.newPage({ viewport: { width: 1000, height: 600 } })
+  await harness.goto(`${BASE}/harness.html`)
+  await harness.waitForFunction(() => window.__ready === true, null, { timeout: 60000 })
   // 2x so the type stays crisp when the sheet is zoomed; JPEG keeps the
-  // strips (photographic content) small enough to commit.
+  // frames (photographic content) small enough to commit.
   const page = await browser.newPage({ viewport: { width: 1500, height: 900 }, deviceScaleFactor: 2 })
   for (const slug of slugs) {
-    const html = sheetHtml(slug)
+    const readability = (await harness.evaluate(
+      (name) => window.__harness.readabilityOf(name),
+      slug,
+    )) as SongReadability | null
+    const html = sheetHtml(slug, readability)
     if (!html) {
       console.warn(`  skipping ${slug}: no readable meta.json + semantics.json`)
       continue
@@ -257,7 +337,12 @@ try {
     await page.screenshot({ path: target, fullPage: true, type: 'jpeg', quality: 80 })
     console.log(`  ${path.relative(process.cwd(), target)}`)
   }
+} catch (error) {
+  console.error('look-sheets failed:', error)
+  exitCode = 1
 } finally {
-  await browser.close()
+  if (browser) await browser.close()
+  server.kill('SIGTERM')
   fs.rmSync(tmp, { recursive: true, force: true })
 }
+process.exit(exitCode)

@@ -249,6 +249,19 @@ describe('version 3', () => {
     expect(bad({ lyrics: 'smuggled text' })).toMatch(/unknown field "lyrics"/)
   })
 
+  it('records whether the image review ran', () => {
+    const ok = parseSemantics(v3Doc({ look: v3Look({ review: { ran: true, swapped: ['verse'] } }) }))
+    expect(ok.errors).toEqual([])
+    expect(ok.semantics!.look!.review).toEqual({ ran: true, swapped: ['verse'] })
+    expect(parseSemantics(v3Doc({ look: v3Look({ review: { ran: false, swapped: [] } }) })).errors).toEqual([])
+    const bad = (review: unknown) =>
+      parseSemantics(v3Doc({ look: v3Look({ review }) })).errors.join(' | ')
+    expect(bad({ ran: 'yes', swapped: [] })).toMatch(/"review" must be/)
+    expect(bad({ ran: true })).toMatch(/"review" must be/)
+    expect(bad({ ran: true, swapped: [], notes: 'free text' })).toMatch(/"review" must be/)
+    expect(bad({ ran: true, swapped: ['bridge'] })).toMatch(/not a section label/)
+  })
+
   it('holds each section to its version 3 fields', () => {
     const bad = (over: Record<string, unknown>) =>
       parseSemantics(v3Doc({ sections: [v3Section(over)] })).errors.join(' | ')

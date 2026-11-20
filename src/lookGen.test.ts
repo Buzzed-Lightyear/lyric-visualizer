@@ -3,20 +3,32 @@ import { generateSemantics, extractionInput } from '../scripts/generateSemantics
 import {
   buildLookOnlyPrompt,
   buildPresetPrompt,
+  buildReviewPrompt,
   choosePresets,
   libraryLook,
+  misfitsFrom,
+  reviewPresets,
   scorerPresets,
   sectionsByLabel,
   withLook,
   writeLookOnly,
   type PresetChoiceInput,
+  type ReviewInput,
+  type StripSource,
 } from './lookGen'
 import type { LyricLine } from './lrc'
-import { pickForSections, presetSetProblems, type CatalogEntry, type Feedback } from './presetPick'
+import {
+  pickForSections,
+  presetSetProblems,
+  usablePresetNames,
+  type CatalogEntry,
+  type Feedback,
+} from './presetPick'
 import { parseSemantics, type SemanticSection } from './semantics'
 import {
   extractSemantics,
   MAX_ATTEMPTS,
+  promptText,
   SemanticsOutputSchema,
   stripNulls,
   type Ask,
@@ -85,11 +97,16 @@ const input = (over: Partial<PresetChoiceInput> = {}): PresetChoiceInput => ({
   ...over,
 })
 
-/** A scripted model: hands out the given answers in order and records the prompts. */
-function fakeModel(answers: unknown[]): { ask: Ask; prompts: string[] } {
+/**
+ * A scripted model: hands out the given answers in order and records the
+ * prompts (their words, and how many images each one carried).
+ */
+function fakeModel(answers: unknown[]): { ask: Ask; prompts: string[]; images: number[] } {
   const prompts: string[] = []
+  const images: number[] = []
   const ask: Ask = async (prompt) => {
-    prompts.push(prompt)
+    prompts.push(promptText(prompt))
+    images.push(typeof prompt === 'string' ? 0 : prompt.filter((part) => part.type === 'image').length)
     const answer = answers[Math.min(prompts.length - 1, answers.length - 1)]
     if (answer instanceof Error) throw answer
     if (typeof answer === 'object' && answer !== null && 'errors' in answer) {
@@ -97,7 +114,7 @@ function fakeModel(answers: unknown[]): { ask: Ask; prompts: string[] } {
     }
     return { raw: answer }
   }
-  return { ask, prompts }
+  return { ask, prompts, images }
 }
 
 const choice = (presets: Record<string, string>) => ({
@@ -129,12 +146,16 @@ describe('the preset prompt', () => {
     }
   })
 
-  it('gives name, description, axes, imagery and colors — and no scores', () => {
+  it('gives name, description, axes, imagery, colors and the two measured numbers', () => {
     expect(prompt).toContain(
-      '{"name":"amber drift","description":"Slow amber dust drifting.","axes":[0.5,0.5,0.5,0.5],"imagery":["fire"],"colors":["#e0a040"]}',
+      '{"name":"amber drift","description":"Slow amber dust drifting.","axes":[0.5,0.5,0.5,0.5],"imagery":["fire"],"colors":["#e0a040"],"readability":0.6,"drawMs":2}',
     )
-    for (const field of ['quality', 'readability', 'brightness', 'flicker', 'costMs']) {
-      expect(prompt).not.toContain(field)
+    // The numbers are explained as information for judgment, not as a rule.
+    expect(prompt).toMatch(/a low number is not a ban/)
+    expect(prompt).toContain('Weigh both as you see fit.')
+    // No scores of the scorer's own.
+    for (const field of ['quality', 'brightness', 'flicker', 'saturation']) {
+      expect(prompt).not.toContain(`"${field}"`)
     }
   })
 
@@ -251,6 +272,167 @@ describe('choosePresets (mocked model)', () => {
     const result = await choosePresets(input(), model.ask, () => {}, CATALOG)
     expect(result.from).toBe('model')
     expect(model.prompts[1]).toMatch(/presets: /)
+  })
+})
+
+describe('the image review (mocked model)', () => {
+  const reviewInput = (presets: Record<string, string>): ReviewInput => ({
+    title: 'Paper Planets',
+    artist: 'The Invented Band',
+    look: input().look,
+    sections: SECTIONS,
+    presets,
+    feedback: FEEDBACK,
+  })
+  // Made-up "strips": any base64 will do, the model is a fake.
+  const allStrips: StripSource = (name) => (name in CATALOG ? `c3RyaXA6${name.length}` : null)
+  const stripsWithout =
+    (...missing: string[]): StripSource =>
+    (name) =>
+      missing.includes(name) ? null : allStrips(name)
+  const chosen = { verse: 'grey fog', chorus: 'red bloom' }
+  const fits = (label: string) => ({ label, fits: true, reason: 'matches the look', alternatives: [] })
+  const misfit = (label: string, alternatives: string[], reason = 'goes green; the look is blue') => ({
+    label,
+    fits: false,
+    reason,
+    alternatives,
+  })
+
+  it('shows the model the strip of every chosen preset, with the look', () => {
+    const parts = buildReviewPrompt(reviewInput(chosen), allStrips, CATALOG)
+    expect(parts.filter((part) => part.type === 'image')).toHaveLength(2)
+    const words = parts.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('\n')
+    expect(words).toContain('Paper craft drifting through a cold blue room.')
+    expect(words).toContain('chosen preset: "grey fog" — Grey fog rolling.')
+    expect(words).toContain('QUIET')
+    expect(words).toContain('Judge the pixels, not the')
+    // Each strip follows the text that names it.
+    const at = parts.findIndex((part) => part.type === 'text' && part.text.includes('chosen preset: "grey fog"'))
+    expect(parts[at + 1].type).toBe('image')
+    // Alternatives are named from the same list, measured numbers included.
+    expect(words).toContain('{"name":"amber drift"')
+    expect(words).not.toContain('"name":"white flash"')
+  })
+
+  it('is skipped, and says so, when a chosen preset has no strip on disk', async () => {
+    const model = fakeModel([{ verdicts: [] }])
+    const result = await reviewPresets(reviewInput(chosen), stripsWithout('red bloom'), model.ask, () => {}, CATALOG)
+    expect(result.ran).toBe(false)
+    expect(result.skipped).toContain('no strip on disk for the preset of "chorus"')
+    expect(result.skipped).toContain('npm run catalog')
+    expect(result.presets).toEqual(chosen)
+    expect(model.prompts).toHaveLength(0) // no call was made
+  })
+
+  it('leaves the set alone when every preset fits', async () => {
+    const model = fakeModel([{ verdicts: [fits('verse'), fits('chorus')] }])
+    const result = await reviewPresets(reviewInput(chosen), allStrips, model.ask, () => {}, CATALOG)
+    expect(result).toEqual({ ran: true, presets: chosen, swaps: [], kept: [] })
+    expect(model.prompts).toHaveLength(1)
+    expect(model.images).toEqual([2])
+  })
+
+  it('shows the alternatives for a misfit and swaps in the one the model picks', async () => {
+    const model = fakeModel([
+      { verdicts: [fits('verse'), misfit('chorus', ['amber drift', 'blue grid'])] },
+      { choices: [{ label: 'chorus', preset: 'blue grid', reason: 'cold and gridded, like the look' }] },
+    ])
+    const result = await reviewPresets(reviewInput(chosen), allStrips, model.ask, () => {}, CATALOG)
+    expect(result.ran).toBe(true)
+    expect(result.presets).toEqual({ verse: 'grey fog', chorus: 'blue grid' })
+    expect(result.swaps).toEqual([
+      { label: 'chorus', from: 'red bloom', to: 'blue grid', reason: 'cold and gridded, like the look' },
+    ])
+    expect(result.kept).toEqual([])
+    // Second call: the original and both alternatives, as images.
+    expect(model.images).toEqual([2, 3])
+    expect(model.prompts[1]).toContain('ORIGINAL "red bloom"')
+    expect(model.prompts[1]).toContain('Your objection: goes green; the look is blue')
+    expect(model.prompts[1]).toContain('ALTERNATIVE "blue grid" — A cold blue grid.')
+    expect(model.prompts[1]).toContain('These stay as they are: "verse": "grey fog"')
+  })
+
+  it('keeps the original when the model finds nothing better', async () => {
+    const model = fakeModel([
+      { verdicts: [fits('verse'), misfit('chorus', ['amber drift'])] },
+      { choices: [{ label: 'chorus', preset: 'red bloom', reason: 'the alternative is worse' }] },
+    ])
+    const result = await reviewPresets(reviewInput(chosen), allStrips, model.ask, () => {}, CATALOG)
+    expect(result.presets).toEqual(chosen)
+    expect(result.swaps).toEqual([])
+    expect(result.kept).toEqual([{ label: 'chorus', preset: 'red bloom', reason: 'the alternative is worse' }])
+  })
+
+  it('cleans the shortlist: only usable, unused presets with a strip are shown', () => {
+    const { misfits, dropped, errors } = misfitsFrom(
+      [
+        fits('verse'),
+        misfit('chorus', ['no such preset', 'white flash', 'owner hates this', 'grey fog', 'blue grid', 'amber drift', 'amber drift']),
+      ],
+      reviewInput(chosen),
+      stripsWithout('blue grid'),
+      CATALOG,
+    )
+    expect(errors).toEqual([])
+    expect(misfits).toEqual([
+      { label: 'chorus', original: 'red bloom', reason: 'goes green; the look is blue', shortlist: ['amber drift'] },
+    ])
+    expect(dropped.join(' | ')).toContain('"no such preset" for "chorus": not a usable preset')
+    expect(dropped.join(' | ')).toContain('"white flash" for "chorus": not a usable preset') // strobing
+    expect(dropped.join(' | ')).toContain('"owner hates this" for "chorus": not a usable preset') // banned
+    expect(dropped.join(' | ')).toContain('"grey fog" for "chorus": already used by this song')
+    expect(dropped.join(' | ')).toContain('"blue grid" for "chorus": no strip on disk')
+    expect(dropped.join(' | ')).toContain('"amber drift" for "chorus": named twice')
+  })
+
+  it('keeps a misfit whose alternatives all fall away, without a second call', async () => {
+    const model = fakeModel([{ verdicts: [fits('verse'), misfit('chorus', ['white flash', 'nope'])] }])
+    const result = await reviewPresets(reviewInput(chosen), allStrips, model.ask, () => {}, CATALOG)
+    expect(result.ran).toBe(true)
+    expect(result.presets).toEqual(chosen)
+    expect(result.kept[0]).toMatchObject({ label: 'chorus', preset: 'red bloom' })
+    expect(model.prompts).toHaveLength(1)
+  })
+
+  it('retries verdicts that miss a label, and replacements that break the guardrails', async () => {
+    const model = fakeModel([
+      { verdicts: [misfit('chorus', ['amber drift'])] }, // no verdict for "verse"
+      { verdicts: [misfit('verse', ['amber drift', 'blue grid']), misfit('chorus', ['amber drift', 'blue grid'])] },
+      // a preset that was never shown for that section:
+      { choices: [{ label: 'verse', preset: 'red bloom', reason: '' }, { label: 'chorus', preset: 'blue grid', reason: '' }] },
+      // one preset for two sections:
+      { choices: [{ label: 'verse', preset: 'amber drift', reason: '' }, { label: 'chorus', preset: 'amber drift', reason: '' }] },
+      { choices: [{ label: 'verse', preset: 'amber drift', reason: 'warm dust' }, { label: 'chorus', preset: 'blue grid', reason: 'cold grid' }] },
+    ])
+    const result = await reviewPresets(reviewInput(chosen), allStrips, model.ask, () => {}, CATALOG)
+    expect(model.prompts[1]).toContain('no verdict for "verse"')
+    expect(model.prompts[3]).toContain('"red bloom" was not shown for "verse"')
+    expect(model.prompts[4]).toContain('"amber drift" is chosen for both "verse" and "chorus"')
+    expect(result.presets).toEqual({ verse: 'amber drift', chorus: 'blue grid' })
+    expect(result.swaps.map((swap) => swap.label)).toEqual(['verse', 'chorus'])
+  })
+
+  it('never leaves the set worse: invalid replacements keep it as it was', async () => {
+    const model = fakeModel([
+      { verdicts: [fits('verse'), misfit('chorus', ['amber drift'])] },
+      { choices: [{ label: 'chorus', preset: 'white flash', reason: '' }] }, // repeated on every retry
+    ])
+    const logged: string[] = []
+    const result = await reviewPresets(reviewInput(chosen), allStrips, model.ask, (m) => logged.push(m), CATALOG)
+    expect(model.prompts).toHaveLength(1 + MAX_ATTEMPTS)
+    expect(result.ran).toBe(true)
+    expect(result.presets).toEqual(chosen)
+    expect(result.swaps).toEqual([])
+    expect(result.kept[0].reason).toContain('replacements stayed invalid')
+    expect(logged.join('\n')).toContain('keeping the set as it was')
+  })
+
+  it('reports a failed call as a review that did not run', async () => {
+    const result = await reviewPresets(reviewInput(chosen), allStrips, fakeModel([new Error('network down')]).ask, () => {}, CATALOG)
+    expect(result.ran).toBe(false)
+    expect(result.skipped).toBe('the review call failed: network down')
+    expect(result.presets).toEqual(chosen)
   })
 })
 
@@ -424,6 +606,44 @@ describe('generateSemantics: the look first, then the scenes', () => {
     const { semantics, errors } = parseSemantics(result.doc)
     expect(errors).toEqual([])
     expect(semantics!.look!.presetsFrom).toBe('scorer')
+  })
+
+  it('records in the look that the review was skipped when there are no strips', async () => {
+    const picked = { verse: real.chorus, chorus: real.verse }
+    const model = fakeModel([modelSemantics(), choice(picked)])
+    const result = await generateSemantics(extraction, LYRICS, context, () => {}, model.ask)
+    expect(result.review!.ran).toBe(false)
+    expect(result.doc!.look.review).toEqual({ ran: false, swapped: [] })
+    expect(parseSemantics(result.doc).semantics!.look!.review).toEqual({ ran: false, swapped: [] })
+  })
+
+  it('reviews the chosen set against its strips and records the swaps', async () => {
+    const picked = { verse: real.chorus, chorus: real.verse }
+    const spare = usablePresetNames(context.feedback).find((name) => !Object.values(picked).includes(name))!
+    const model = fakeModel([
+      modelSemantics(),
+      choice(picked),
+      {
+        verdicts: [
+          { label: 'verse', fits: true, reason: 'fits', alternatives: [] },
+          { label: 'chorus', fits: false, reason: 'wrong colors', alternatives: [spare] },
+        ],
+      },
+      { choices: [{ label: 'chorus', preset: spare, reason: 'right colors' }] },
+    ])
+    const result = await generateSemantics(
+      extraction,
+      LYRICS,
+      { ...context, strips: () => 'c3RyaXA=' },
+      () => {},
+      model.ask,
+    )
+    expect(model.prompts).toHaveLength(4)
+    expect(model.images).toEqual([0, 0, 2, 2])
+    expect(result.doc!.look.presets).toEqual({ verse: picked.verse, chorus: spare })
+    expect(result.doc!.look.review).toEqual({ ran: true, swapped: ['chorus'] })
+    expect(result.review!.swaps[0]).toMatchObject({ label: 'chorus', from: picked.chorus, to: spare })
+    expect(parseSemantics(result.doc).errors).toEqual([])
   })
 
   it('stops before the scenes when the semantics never validate', async () => {

@@ -72,9 +72,14 @@ const store = fs.existsSync(MEASUREMENTS)
   : {}
 const takenSlugs = new Set(Object.values(store).map((entry) => entry.slug))
 
-const server = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-  stdio: 'ignore',
-})
+// Started as one process (node running Vite's own entry), not through npx:
+// killing an npx wrapper can leave the real server running on the port,
+// and the next run would then quietly talk to that stale one.
+const server = spawn(
+  process.execPath,
+  ['node_modules/vite/bin/vite.js', '--port', String(PORT), '--strictPort'],
+  { stdio: 'ignore' },
+)
 
 let browser
 let exitCode = 0

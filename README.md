@@ -32,7 +32,11 @@ boundary) and `shots/report.json`, and fails on the checks defined in
 `src/thresholds.ts`: blank tiles, differently labeled sections that look
 alike, the two choruses not matching, semantics-off differing from the
 neutral look, motion not rising with loudness (or freezing at silence),
-single-frame jumps inside transitions, and draw time over budget. The
+single-frame jumps inside transitions, draw time over budget (the scene,
+and the text layer with adaptive text over a hostile background), and
+text that is not readable over a scene a song plays (see "Readable
+text" below; it prints a per-song, per-scene table of the old scrim
+against adaptive text). The
 scene is deterministic (seeded randomness, no clock or window reads), so
 repeats of a section render identically. Look at the contact sheet after
 changing visuals; the checks catch regressions, not taste.
@@ -54,8 +58,9 @@ One folder per song under `public/songs/<slug>/`:
 index-songs`; add-song does it automatically) and is what the app loads
 at startup. The start screen lists every song — title, artist, duration,
 semantics source, and a strip of its section palette — and remembers the
-last song played; `?song=<slug>` deep-links one. Preset choices in
-`src/presetFeedback.json` are per song; bans are global.
+last song played; `?song=<slug>` deep-links one. Kept preset choices
+(the `P` key) in `src/presetFeedback.json` are per song; bans are
+global.
 
 ## Adding a song
 
@@ -116,18 +121,32 @@ the SDK code is never imported by anything in the browser bundle).
    40%, same-label sections identical, refrain gestures consistent, no
    free-text field repeating four or more words in a row of a lyric
    line) or nothing is written.
-2. **The model chooses the scenes.** With the look written, the model is
-   shown every preset that may play (name, description, axes, imagery,
-   colors), the song's sections, and the looks and preset sets of the
-   songs already in the library, and chooses one preset per section
-   label as one cohesive set for this song — and is asked to give the
-   song its own identity next to the others. That is a request to the
-   model; no code scores, penalizes or spreads presets. Code keeps
-   guardrails only: names must exist; nothing banned, broken, blank or
-   hard-strobing; no preset for two different labels. An invalid set is
-   retried twice with the problems quoted back; if it is still invalid
-   (or the call fails) the scorer picks instead and the file records it
+2. **The model chooses the scenes, from text.** With the look written,
+   the model is shown every preset that may play (name, description,
+   axes, imagery, colors, and two measured numbers: white-text
+   readability and draw cost per frame), the song's sections, and the
+   looks and preset sets of the songs already in the library, and
+   chooses one preset per section label as one cohesive set for this
+   song — and is asked to give the song its own identity next to the
+   others. That is a request to the model; no code scores, penalizes or
+   spreads presets, and the two measured numbers are information for
+   its judgment, not a rule. Code keeps guardrails only: names must
+   exist; nothing banned, broken, blank or hard-strobing; no preset for
+   two different labels. An invalid set is retried twice with the
+   problems quoted back; if it is still invalid (or the call fails) the
+   scorer picks instead and the file records it
    (`look.presetsFrom: "scorer"`).
+3. **The model sees pixels.** One-line descriptions miss. So the model
+   is then shown the look and the strip image of every preset it chose
+   (four frames: quiet, loud, on a beat, later) and marks the ones that
+   contradict the look, naming up to six alternatives for each. In a
+   further call it is shown the strips of those alternatives next to
+   the original and picks a replacement — or keeps the original if
+   nothing is better. The same guardrails hold, an invalid review
+   leaves the set as it was, and the look records what happened
+   (`look.review: { ran, swapped }`). This stage needs the strips from
+   `npm run catalog` on disk (`catalog-strips/`); without them it is
+   skipped and add-song says so.
 
 Without a key, add-song writes a **neutral fallback** instead — a
 version 2 file with sections from the gaps in the LRC, neutral mood, no
@@ -144,10 +163,15 @@ fade out after a few idle seconds and return on mouse move or key press.
 - `L`: show or hide the lyrics (physics text or the DOM line)
 - `T`: physics text vs the old single DOM lyric line
 - `B`: cycle the background — butterchurn / canvas scene / black
-- `[` / `]`: previous / next ranked candidate for the current section
-  (top 8); the choice is saved for that section label
+- `[` / `]`: **preview** the previous / next candidate for the current
+  section (the look's pick, then the scorer's top 8). Nothing is saved;
+  the preview stays for that section label until the song is reloaded.
+  Every press says so: "Previewing 3 of 8, not saved. P to keep."
+- `P`: **keep** the preset on screen for this section label in this
+  song ("Kept for verse 1."). This is the only key that saves a choice.
 - `N`: never show this preset again, then move to the next candidate
-- `Shift+[` / `Shift+]`: browse the whole catalog (not saved)
+- `Shift+[` / `Shift+]`: browse the whole catalog (not saved; `P` keeps
+  what is on screen)
 - `G`: toggle gestures and focus words off and on (A/B against the pure
   section base motion)
 - `E` / `H` / `X`: cycle the entrance / hold / exit part
@@ -156,22 +180,70 @@ fade out after a few idle seconds and return on mouse move or key press.
   float, tremble, swing); `0` returns everything to the mood mapping
 - `D`: debug overlay — analysis bars, section, committed key, emphasis,
   background mode + preset name, the section's base motion (entrance,
-  hold, exit, voice, anchor; forced overrides marked), and per line the
-  focus indices, each gesture with whether it came from a direction or
-  the lexicon, and refrain reuse
+  hold, exit, voice, anchor; forced overrides marked), how the text was
+  made readable (light or dark, backing strength, accent on or off, the
+  brightness range behind the line), and per line the focus indices,
+  each gesture with whether it came from a direction or the lexicon,
+  and refrain reuse
 - `S`: toggle semantics on/off (off reproduces the step 2 look, for A/B)
 - `K`: tuning panel (Tweakpane) — live sliders for every numeric knob in
   `src/tuning.ts`, grouped by module. Edits apply on the next frame and
   are not persisted; use "log values to console" and copy keepers into
   `src/tuning.ts`. Particle counts and FFT size apply at startup only.
+  Also here: the **readable text › oldScrim** switch (the old global
+  scrim, for A/B), "clear this song's kept choices" (bans stay) and
+  "reset preset feedback" (this song's kept choices and all bans).
 
 ## Step 3 spike: MilkDrop background + kinetic typography
 
 An exploration rig for auditioning motion and presets, not a finished
 look. Three layers: butterchurn (WebGL 2, falls back to the canvas scene
 if unavailable) renders MilkDrop-style visuals fed by the same
-MediaElementSource; a dark scrim plus a palette tint keeps text
-readable; and a Canvas 2D layer on top runs physics-driven typography.
+MediaElementSource; a faint palette tint sits over it; and a Canvas 2D
+layer on top runs physics-driven typography, made readable from the
+pixels behind it (next section).
+
+### Readable text
+
+The text is made readable over anything, on the text side, in Canvas 2D
+(`src/legibility.ts` is the math, `src/backdrop.ts` the sampling,
+`src/textLayer.ts` the drawing). No preset is excluded for being hard
+to read.
+
+- **Sampling**: right after the background renders, its canvas is drawn
+  into a small offscreen canvas (96x54, no smoothing, so a busy scene
+  keeps its real contrast) and read back every 4th frame. Each line and
+  each word reads the brightness behind it: the mean, the dark and
+  bright ends (5th and 95th percentile), how far apart they are
+  (busyness), and how the area is spread over brightness.
+- **Light or dark text**: decided per line when it enters — whichever
+  tone needs less help over the area behind the line — and held for the
+  whole line. The next line keeps the previous line's tone unless the
+  other is clearly better (hysteresis), so text never flickers between
+  the two. Light text is the section's text color (lightened only if it
+  is too dim); dark text is the section's background color.
+- **Backing instead of the scrim**: a halo that hugs the glyphs, in the
+  opposite tone — a tight ring under a wider faint one. Its strength is
+  per word: exactly the opacity needed to bring the worst of what is
+  behind that word to 4.5:1. Over a calm dark scene it is zero and
+  nothing is drawn, so the background shows untouched. A new line enters
+  with the backing it needs; after that the strength eases, fast up and
+  slow down, as the background changes under the held tone.
+- **Accent**: focus words (and the word being sung) take an accent from
+  the palette — the section's accent first, then the rest of the song's
+  palette — only if that color clears 3:1 against what is behind it,
+  backing included. Otherwise they keep the base text color.
+- **The old behavior** (global scrim, fixed colors, no backing) is one
+  switch away: K panel › readable text › oldScrim.
+- **Measured**: `npm run shots` runs the real text layer over the four
+  strip frames (quiet, loud, on a beat, later) of every scene every
+  song plays — the line enters over the first frame and is held while
+  the background changes — and pairs every pixel just inside a glyph
+  edge with the pixel just outside it. Each pair's WCAG contrast ratio
+  is one sample. The check wants 95% of a scene's samples at 3:1 or
+  better (`src/thresholds.ts`) and prints the median, for the old scrim
+  and for adaptive text. The frames are the catalog strips when they
+  are on disk, and are rendered on the spot otherwise (slower).
 
 ### Animation parts
 
@@ -282,9 +354,10 @@ Motion changes only when meaning changes:
   table (`src/gestures.ts` LEXICON, with inflection and g-dropping
   handling) puts the matched gesture on the matching word (at most two
   per line).
-- Emphasis still scales strength, size, scrim and layout (focus at the
-  top, lockup in the middle), and switches to the accent voice at
-  >= 0.85. Audio still drives all ongoing forces.
+- Emphasis still scales strength, size and layout (focus at the top,
+  lockup in the middle; the scrim too, in the old scrim mode), and
+  switches to the accent voice at >= 0.85. Audio still drives all
+  ongoing forces.
 
 ### Gestures
 
@@ -335,7 +408,7 @@ committed `src/presetCatalog.json`.
 
 Picking, per section label, in this order:
 
-1. **Your saved choice** ([ ] in the player), if it can still play.
+1. **Your kept choice** (`P` in the player), if it can still play.
 2. **The look's preset** (`look.presets` in a version 3 file): the set
    the model chose for this song in add-song.
 3. **The scorer**: every usable preset is scored per section (axes
@@ -348,10 +421,11 @@ Picking, per section label, in this order:
 Guardrails, whoever decides: banned, broken, blank and hard-strobing
 presets never play; same-label sections share one preset; automatic
 picks never repeat on neighbouring sections; same inputs give the same
-picks. Your [ ] / N feedback persists to `src/presetFeedback.json`
-through a dev-only Vite endpoint (reset button in the K panel). Choices
-are stored per song (keyed by slug); bans apply everywhere. The debug
-overlay marks a pick `(saved)` or `(look)`.
+picks. `[` and `]` only preview. Your `P` choices and `N` bans persist
+to `src/presetFeedback.json` through a dev-only Vite endpoint (the K
+panel can clear this song's kept choices, or reset them with all bans).
+Choices are stored per song (keyed by slug); bans apply everywhere. The
+debug overlay marks a pick `(saved)` or `(look)`.
 
 ## Does each song have its own look?
 
@@ -364,21 +438,26 @@ npm run look-sheets                      # review/<slug>.jpg
 `look-report` measures; nothing in it feeds back into picking. For the
 library it prints the distinct presets per song, the presets every pair
 of songs shares, how many distinct mood and imagery terms are in use,
-each song's voices and palette, and the measured text readability of
-the picked presets (the scorer weighs it; the model is not shown it) —
+each song's voices and palette, whether its image review ran and what
+it swapped, and the catalog's white-text readability of the picked
+presets (how hard the scenes are on plain white text; what the text
+layer makes of them is the readable-text check in `npm run shots`) —
 before and after. "Before" is the
 library dressed by the scorer alone (looks ignored, voices from the mood
 anchors: what every song got up to version 2), or, with `--before`, the
-song files as they were at that commit. Saved choices are reported
+song files as they were at that commit. Kept choices are reported
 separately, as overrides. `--out <file>` also writes the text.
 
 `look-sheets` writes one contact sheet per song under `review/`: the
 look description, the palette swatches, the two voices set in their own
 faces (the title in main, the artist in accent), and for each section
-label the 4-frame strip of its preset with the section's mood, axes,
-imagery and scene. A saved choice that overrides the look is shown under
-it. The strips come from `npm run catalog`; the sheets carry no lyric
-text.
+label the four frames of its preset with the section's mood, axes,
+imagery and scene. On every frame the song title is drawn by the real
+text layer with its readability treatment (the script starts the dev
+server and lets the harness page do the drawing), and the scene's
+measured contrast is printed beside it, adaptive text against the old
+scrim. A preset the review swapped in is marked. The sheets carry no
+lyric text.
 
 ## Semantics file format
 
@@ -423,6 +502,10 @@ text.
     `presetsFrom` says who chose them (`model`, or `scorer` after the
     model's set failed the guardrails); `source` says who wrote the look
     (`api` / `agent`).
+  - `review`: `{ "ran": true, "swapped": ["verse 2"] }` — whether the
+    model looked at the strips of its chosen presets, and the labels
+    whose preset it replaced. `ran: false` means the set was chosen from
+    text only (no strips on disk).
   - `partial: true` marks a look that was added to an older file without
     its lyrics: the sections are still version 2 shaped (no axes, scene
     or voice of their own; motion still follows their mood word).
@@ -497,10 +580,13 @@ voices from the mood word.
   against the hand-written annotation).
 - **Semantics version 3: built.** Each song gets its own look from the
   model: free mood and imagery, axes as numbers, a song-level look with
-  its two voices, and the model's choice of presets as one set per song
-  (`npm run look-report`, `npm run look-sheets`). The six library songs
-  currently carry **partial** looks (written without lyrics); one
-  command each regenerates them in full.
+  its two voices, and the model's choice of presets as one set per song,
+  reviewed against the preset strips (`npm run look-report`, `npm run
+  look-sheets`). The six library songs currently carry **partial** looks
+  (written without lyrics); one command each regenerates them in full.
+- **Readable text: built.** Adaptive light or dark text with a
+  text-hugging backing replaces the global scrim; measured per scene in
+  `npm run shots`.
 - **Songs pass: done.** A real library (one folder per song), add-song
   with LRCLIB lyrics + word timing, a start screen, and a proper
   transport replacing the native audio controls.

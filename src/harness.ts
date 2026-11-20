@@ -12,9 +12,16 @@ import '@fontsource/inter/300.css'
 import butterchurnModule from 'butterchurn'
 import type { AudioFrame } from './audioMath'
 import { unwrapButterchurn } from './background'
+import { BackdropSampler } from './backdrop'
 import { drawDebug } from './debug'
 import { GESTURE_NAMES } from './gestures'
 import { LAYOUT_NAMES, LAYOUTS, type LayoutName } from './layout'
+import {
+  probeLibrary,
+  probeSong,
+  probeSongs,
+  type SongReadability,
+} from './legibilityProbe'
 import { motifForSection, NEUTRAL_PARAMS, paramsForSection, type SceneParams, type TextParams } from './mapping'
 import { ENTRANCE_NAMES, EXIT_NAMES, HOLD_NAMES } from './parts'
 import { loadAllPresets } from './presetPacks'
@@ -30,7 +37,7 @@ import {
 } from './semantics'
 import { fontGate, TextLayer, type PartOverrides } from './textLayer'
 import { THRESHOLDS } from './thresholds'
-import { LEGIBILITY, TYPESET } from './tuning'
+import { LEGIBILITY, LEGIBLE, TYPESET } from './tuning'
 import {
   loadAllFonts,
   makeMeasure,
@@ -64,6 +71,18 @@ interface Report {
   steadyMaxStep: number
   drawMs: { avg: number; p99: number; frames: number }
   drawPerMotif?: Record<string, { avg: number; p99: number }>
+  /** Per song, per scene: text contrast in the old scrim mode and now. */
+  readability?: SongReadability[]
+  /** Text layer draw cost over a hostile background, old mode vs adaptive. */
+  textDrawMs?: {
+    scrim: { avg: number; p99: number }
+    adaptive: { avg: number; p99: number }
+    /**
+     * One background sample (draw + readback) from a WebGL canvas the
+     * size butterchurn renders at; -1 when WebGL 2 is unavailable.
+     */
+    sampleMs: number
+  }
   thresholds: typeof THRESHOLDS
 }
 
@@ -366,6 +385,8 @@ function fakeTextParams(emphasis: number): TextParams {
     fill: [235, 240, 250],
     accent: [255, 180, 90],
     tint: [60, 80, 140],
+    background: [8, 10, 18],
+    accents: [[255, 180, 90]],
     forceScale: 1.2,
     sizeScale: 1,
     scrim: 0.3,
@@ -1097,6 +1118,21 @@ async function run(): Promise<Report> {
   })
   checks.push(await butterchurnSmoke())
 
+  // Readable text over every scene of every song, old scrim vs adaptive.
+  const readability = await probeLibrary()
+  checks.push(...readabilityChecks(readability))
+  const textDrawMs = textDrawProbes()
+  checks.push({
+    name: 'text draw time within budget (adaptive text, hostile background)',
+    pass:
+      textDrawMs.adaptive.avg <= THRESHOLDS.drawAvgMs && textDrawMs.adaptive.p99 <= THRESHOLDS.drawP99Ms,
+    value:
+      `avg ${textDrawMs.adaptive.avg.toFixed(2)}ms, p99 ${textDrawMs.adaptive.p99.toFixed(2)}ms ` +
+      `(old scrim: avg ${textDrawMs.scrim.avg.toFixed(2)}ms, p99 ${textDrawMs.scrim.p99.toFixed(2)}ms; ` +
+      `one background sample ${textDrawMs.sampleMs.toFixed(2)}ms)`,
+    threshold: `avg <= ${THRESHOLDS.drawAvgMs}ms, p99 <= ${THRESHOLDS.drawP99Ms}ms`,
+  })
+
   // The chosen background preset per section of the song.
   const feedbackFile = parseFeedbackFile((await import('./presetFeedback.json')).default)
   const picks = pickForSections(
@@ -1139,16 +1175,147 @@ async function run(): Promise<Report> {
       frames: drawMs.frames,
     },
     drawPerMotif,
+    readability,
+    textDrawMs,
     thresholds: THRESHOLDS,
   }
 }
 
+// --- readable text -----------------------------------------------------------
+
+const percent = (share: number) => `${(share * 100).toFixed(1)}%`
+
+/** One check per song: every scene keeps the text at the contrast floor. */
+function readabilityChecks(songs: SongReadability[]): Check[] {
+  const threshold =
+    `>= ${percent(THRESHOLDS.textContrastShare)} of samples at ` +
+    `${THRESHOLDS.textContrastFloor}:1 in every scene`
+  if (songs.length === 0) {
+    return [{ name: 'readable text', pass: true, value: 'SKIPPED: no songs to measure', threshold }]
+  }
+  return songs.map((song) => {
+    const name = `readable text: ${song.slug}`
+    if (song.scenes.length === 0) {
+      return {
+        name,
+        pass: true,
+        value: 'SKIPPED with warning: no preset frames (no strips on disk and no WebGL 2)',
+        threshold,
+      }
+    }
+    const worst = song.scenes.reduce((a, b) => (b.after.pass < a.after.pass ? b : a))
+    const worstBefore = song.scenes.reduce((a, b) => (b.before.pass < a.before.pass ? b : a))
+    const failing = song.scenes.filter((scene) => scene.after.pass < THRESHOLDS.textContrastShare)
+    return {
+      name,
+      pass: failing.length === 0,
+      value:
+        `${song.scenes.length} scenes; worst "${worst.label}" ${percent(worst.after.pass)}, median ` +
+        `${worst.after.median.toFixed(1)}:1 (old scrim worst "${worstBefore.label}" ` +
+        `${percent(worstBefore.before.pass)}, median ${worstBefore.before.median.toFixed(1)}:1)` +
+        (song.skipped.length > 0 ? `; no frames for ${song.skipped.join(', ')}` : ''),
+      threshold,
+    }
+  })
+}
+
+/** Black and white stripes: the background that asks the most of the backing. */
+function hostileBackground(): HTMLCanvasElement {
+  const canvas = document.createElement('canvas')
+  canvas.width = 768
+  canvas.height = 432
+  const ctx = canvas.getContext('2d')!
+  for (let x = 0; x < canvas.width; x += 24) {
+    ctx.fillStyle = (x / 24) % 2 === 0 ? '#000' : '#fff'
+    ctx.fillRect(x, 0, 24, canvas.height)
+  }
+  return canvas
+}
+
+/**
+ * Text layer draw cost, old scrim vs adaptive, measured like the scene
+ * (a 1x1 readback forces the raster each frame). The worst honest case:
+ * a long line, a letter-by-letter hold, and a background that needs the
+ * full backing.
+ */
+function textDrawProbes(): NonNullable<Report['textDrawMs']> {
+  const background = hostileBackground()
+  const sampler = new BackdropSampler()
+  // The sample's own cost, from a WebGL canvas as in the app (a fresh
+  // frame is drawn before each sample, so every readback is a real one).
+  const sampleTimes: number[] = []
+  const glCanvas = document.createElement('canvas')
+  glCanvas.width = 768
+  glCanvas.height = 432
+  const gl = glCanvas.getContext('webgl2')
+  if (gl) {
+    for (let i = 0; i < 40; i++) {
+      gl.clearColor((i % 5) / 5, 0.3, 0.6, 1)
+      gl.clear(gl.COLOR_BUFFER_BIT)
+      const start = performance.now()
+      sampler.update(glCanvas, true)
+      sampleTimes.push(performance.now() - start)
+    }
+  }
+  sampler.update(background, true)
+  const line = { index: 0, text: `${FAKE_LINE_A} AND ${FAKE_LINE_B} AGAIN`, start: 0, end: 2 }
+  const overrides: PartOverrides = { entrance: 'creep', hold: 'wave', exit: 'blow', layout: 'centered' }
+  const probe = (oldScrim: boolean): { avg: number; p99: number } => {
+    const wasOld = LEGIBLE.oldScrim
+    LEGIBLE.oldScrim = oldScrim
+    try {
+      const canvas = document.createElement('canvas')
+      const layer = new TextLayer(canvas, createRandom(SEED))
+      layer.resize(W, H, 1)
+      const ctx = canvas.getContext('2d')!
+      const params = { ...fakeTextParams(0.6), focus: [1] }
+      const input = (time: number) => ({ params, line, time, overrides, backdrop: sampler.backdrop })
+      let t = 0
+      for (; t < 2.5; t += DT) layer.draw(scripted(t, 0.6, true), input(t), DT, true)
+      const times: number[] = []
+      for (let i = 0; i < 120; i++, t += DT) {
+        const start = performance.now()
+        layer.draw(scripted(t, 0.6, true), input(t), DT, true)
+        ctx.getImageData(0, 0, 1, 1)
+        times.push(performance.now() - start)
+      }
+      times.sort((a, b) => a - b)
+      return {
+        avg: Number((times.reduce((a, b) => a + b, 0) / times.length).toFixed(3)),
+        p99: Number(times[Math.floor(times.length * 0.99)].toFixed(3)),
+      }
+    } finally {
+      LEGIBLE.oldScrim = wasOld
+    }
+  }
+  sampleTimes.sort((a, b) => a - b)
+  return {
+    scrim: probe(true),
+    adaptive: probe(false),
+    sampleMs:
+      sampleTimes.length > 0
+        ? Number(sampleTimes[Math.floor(sampleTimes.length / 2)].toFixed(3))
+        : -1,
+  }
+}
+
+/** For the contact sheets: one song's scenes with the text drawn over each frame. */
+async function readabilityOf(slug: string): Promise<SongReadability | null> {
+  await loadAllFonts()
+  await document.fonts.ready
+  const song = (await probeSongs()).find((entry) => entry.slug === slug)
+  return song ? probeSong(song, { images: true }) : null
+}
+
 declare global {
   interface Window {
-    __harness: { run: () => Promise<Report> }
+    __harness: {
+      run: () => Promise<Report>
+      readabilityOf: (slug: string) => Promise<SongReadability | null>
+    }
     __ready: boolean
   }
 }
 
-window.__harness = { run }
+window.__harness = { run, readabilityOf }
 window.__ready = true

@@ -150,6 +150,7 @@ export interface SemanticsDoc {
   look: LookDraft & {
     presets: Record<string, string>
     presetsFrom?: 'model' | 'scorer'
+    review?: { ran: boolean; swapped: string[] }
     source: 'api' | 'agent'
     partial?: boolean
   }
@@ -260,6 +261,22 @@ ${NO_LYRICS_RULE} Words are referred to by index only.`
 
 // --- running the model ---------------------------------------------------------
 
+/** A prompt is plain text, or text with images in between (the review stage). */
+export type PromptPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; mediaType: 'image/png' | 'image/jpeg'; /** base64 */ data: string }
+
+export type Prompt = string | PromptPart[]
+
+/** The words of a prompt, images left out (logs and tests). */
+export function promptText(prompt: Prompt): string {
+  if (typeof prompt === 'string') return prompt
+  return prompt
+    .filter((part): part is Extract<PromptPart, { type: 'text' }> => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n')
+}
+
 /**
  * One model call: a prompt and the schema its JSON answer must follow.
  * Returns the parsed JSON, or the reasons there is none (refusal, cut
@@ -267,7 +284,7 @@ ${NO_LYRICS_RULE} Words are referred to by index only.`
  * SDK; tests pass a fake.
  */
 export type Ask = (
-  prompt: string,
+  prompt: Prompt,
   schema: z.ZodType,
 ) => Promise<{ raw: unknown; errors?: undefined } | { raw?: undefined; errors: string[] }>
 
@@ -279,14 +296,14 @@ export const MAX_ATTEMPTS = 3
  * retry carries the previous attempt's problems back to the model.
  */
 export async function askUntilValid<S extends z.ZodType, T>(
-  basePrompt: string,
+  basePrompt: Prompt,
   schema: S,
   ask: Ask,
   validate: (output: z.infer<S>) => { value: T | null; errors: string[] },
   log: (message: string) => void = () => {},
   what = 'answer',
 ): Promise<{ value: T | null; errors: string[]; attempts: number }> {
-  let prompt = basePrompt
+  let prompt: Prompt = basePrompt
   let lastErrors: string[] = []
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     log(`  asking for the ${what} (attempt ${attempt} of ${MAX_ATTEMPTS})...`)
@@ -308,10 +325,13 @@ export async function askUntilValid<S extends z.ZodType, T>(
     log(
       `  invalid ${what}: ${lastErrors.slice(0, 3).join('; ')}${lastErrors.length > 3 ? '; ...' : ''}`,
     )
-    prompt =
-      basePrompt +
+    const problems =
       `\n\nYour previous attempt had these problems — fix every one of them:\n` +
       lastErrors.map((error) => `- ${error}`).join('\n')
+    prompt =
+      typeof basePrompt === 'string'
+        ? basePrompt + problems
+        : [...basePrompt, { type: 'text', text: problems }]
   }
   return { value: null, errors: lastErrors, attempts: MAX_ATTEMPTS }
 }

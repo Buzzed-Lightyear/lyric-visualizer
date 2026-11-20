@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AudioAnalysis } from './analysis'
 import { Background } from './background'
+import { BackdropSampler } from './backdrop'
 import { buildChoreo, lineWords, type LineChoreo } from './choreo'
 import { SectionCommitter } from './committer'
 import { drawDebug } from './debug'
@@ -26,6 +27,14 @@ import {
   type FeedbackFile,
   type LabelPick,
 } from './presetPick'
+import {
+  clearKept,
+  dropPreviewsOf,
+  keepPreset,
+  newPreviewState,
+  playingPreset,
+  stepPreview,
+} from './presetKeys'
 import { createRandom } from './random'
 import { Scene } from './scene'
 import {
@@ -103,7 +112,8 @@ export function Player({ song, audio, feedback, onBack }: PlayerProps) {
   const gesturesOnRef = useRef(true)
   const feedbackRef = useRef(feedback)
   const picksRef = useRef<Map<string, LabelPick>>(new Map())
-  const candidateIndexRef = useRef<Map<string, number>>(new Map())
+  // [ ] previews live here only: nothing is saved until P.
+  const previewRef = useRef(newPreviewState())
   const browseIndexRef = useRef(-1)
   const backgroundRef = useRef<Background | null>(null)
   const committedRef = useRef<Committed>({ key: 'neutral', energy: 0.5, section: null })
@@ -146,8 +156,8 @@ export function Player({ song, audio, feedback, onBack }: PlayerProps) {
   }
 
   const loadForLabel = (label: string, blendSec: number) => {
-    const pick = picksRef.current.get(label)
-    if (pick?.chosen) backgroundRef.current?.loadByName(pick.chosen, blendSec)
+    const name = playingPreset(picksRef.current.get(label), previewRef.current)
+    if (name) backgroundRef.current?.loadByName(name, blendSec)
   }
 
   // Grammar, focus, gestures and refrains per lyric line; rebuilt when
@@ -176,6 +186,13 @@ export function Player({ song, audio, feedback, onBack }: PlayerProps) {
         recomputePicks()
         saveFeedback()
         showToast('preset feedback reset (this song + bans)')
+      },
+      clearKeptChoices: () => {
+        const { cleared, message } = clearKept(feedbackRef.current, song.slug)
+        recomputePicks()
+        if (cleared > 0) saveFeedback()
+        loadForLabel(committedRef.current.section?.label ?? 'neutral', BUTTERCHURN.cycleBlend)
+        showToast(message)
       },
     })
     knobsRef.current = knobs
@@ -358,22 +375,34 @@ export function Player({ song, audio, feedback, onBack }: PlayerProps) {
       if (key === 'b') backgroundRef.current?.cycleMode()
       if (key === 'g') gesturesOnRef.current = !gesturesOnRef.current
       if (event.key === ']' || event.key === '[') {
+        // Preview only: nothing is saved, and it ends when the song reloads.
         const label = committedRef.current.section?.label ?? 'neutral'
-        const pick = picksRef.current.get(label)
-        if (pick && pick.candidates.length > 0) {
-          const n = pick.candidates.length
-          const current =
-            candidateIndexRef.current.get(label) ??
-            Math.max(0, pick.candidates.findIndex((c) => c.name === pick.chosen))
-          const next = (current + (event.key === ']' ? 1 : -1) + n) % n
-          candidateIndexRef.current.set(label, next)
-          const name = pick.candidates[next].name
-          feedbackFor(feedbackRef.current, song.slug).chosen[label] = name
+        const step = stepPreview(
+          picksRef.current.get(label),
+          previewRef.current,
+          event.key === ']' ? 1 : -1,
+        )
+        if (step) {
+          backgroundRef.current?.loadByName(step.name, BUTTERCHURN.cycleBlend)
+          showToast(step.message)
+        }
+      }
+      if (key === 'p') {
+        // Keep the preset on screen for this section label in this song.
+        const label = committedRef.current.section?.label ?? 'neutral'
+        const onScreen = backgroundRef.current?.currentPreset ?? null
+        const result = keepPreset(
+          feedbackRef.current,
+          song.slug,
+          label,
+          onScreen === '(none)' ? null : onScreen,
+          previewRef.current,
+        )
+        if (result.kept) {
           recomputePicks()
           saveFeedback()
-          backgroundRef.current?.loadByName(name, BUTTERCHURN.cycleBlend)
-          showToast(`${label}: candidate ${next + 1} of ${n}, saved`)
         }
+        showToast(result.message)
       }
       if (event.key === '}' || event.key === '{') {
         // Browse the whole catalog; nothing is saved.
@@ -389,7 +418,9 @@ export function Player({ song, audio, feedback, onBack }: PlayerProps) {
             CATALOG_NAMES.length
           const name = CATALOG_NAMES[browseIndexRef.current]
           backgroundRef.current?.loadByName(name, BUTTERCHURN.cycleBlend)
-          showToast(`browse ${browseIndexRef.current + 1}/${CATALOG_NAMES.length}: ${name}`)
+          showToast(
+            `Browsing ${browseIndexRef.current + 1} of ${CATALOG_NAMES.length}, not saved. P to keep. ${name}`,
+          )
         }
       }
       if (key === 'n') {
@@ -404,7 +435,8 @@ export function Player({ song, audio, feedback, onBack }: PlayerProps) {
             }
           }
           const label = committedRef.current.section?.label ?? 'neutral'
-          candidateIndexRef.current.delete(label)
+          dropPreviewsOf(previewRef.current, name)
+          previewRef.current.index.delete(label)
           recomputePicks()
           saveFeedback()
           loadForLabel(label, BUTTERCHURN.cycleBlend)
@@ -448,6 +480,8 @@ export function Player({ song, audio, feedback, onBack }: PlayerProps) {
     const text = new TextLayer(textCanvas, createRandom(4242))
     const background = new Background(bgCanvas, audio)
     backgroundRef.current = background
+    // A small sample of whatever is behind the text, for readability.
+    const backdrop = new BackdropSampler()
     const committer = new SectionCommitter<Committed>(committedRef.current)
     const onResize = () => {
       const w = window.innerWidth
@@ -508,6 +542,9 @@ export function Player({ song, audio, feedback, onBack }: PlayerProps) {
       sceneCanvas.style.visibility = mode === 'scene' ? 'visible' : 'hidden'
       if (mode === 'butterchurn') background.render()
       else if (mode === 'scene') scene.draw(frame, paramsForSection(section, emphasis), dt)
+      // Sample right after the background rendered, while its frame is
+      // still in the drawing buffer.
+      backdrop.update(mode === 'butterchurn' ? bgCanvas : mode === 'scene' ? sceneCanvas : null)
 
       // Text layer (plus scrim/tint, which it always draws).
       const committedSection = committedRef.current.section
@@ -547,7 +584,13 @@ export function Player({ song, audio, feedback, onBack }: PlayerProps) {
           : null
       text.draw(
         frame,
-        { params: textParams, line, time: t, overrides: overridesRef.current },
+        {
+          params: textParams,
+          line,
+          time: t,
+          overrides: overridesRef.current,
+          backdrop: backdrop.backdrop,
+        },
         dt,
       )
 
@@ -568,6 +611,15 @@ export function Player({ song, audio, feedback, onBack }: PlayerProps) {
           `pick   ${entry ? entry.description.slice(0, 58) : '(not in catalog)'}`,
           `why    ${pick?.reasons.join(' · ') || '—'}  ·  next ${(pick?.runnerUp ?? '—').slice(0, 26)}`,
           `text   ${physicsTextRef.current ? 'physics' : 'dom line'}  ·  voice ${eff(o.voice, textParams.voice)}  ·  layout ${eff(o.layout, textParams.layout)}  ·  anchor ${textParams.anchor}`,
+          `read   ${(() => {
+            const read = text.legibility()
+            if (!read) return '(no line)'
+            if (read.mode === 'scrim') return 'old scrim (K › readable text › oldScrim)'
+            return (
+              `${read.polarity} text  ·  backing ${read.strength.toFixed(2)}  ·  accent ${read.accent ? 'on' : 'off'}` +
+              `  ·  behind ${read.stats.lo.toFixed(2)}–${read.stats.hi.toFixed(2)}  ·  sample ${backdrop.lastMs.toFixed(1)}ms`
+            )
+          })()}`,
           `base   in ${eff(o.entrance, textParams.entrance)}  ·  hold ${eff(o.hold, textParams.hold)}  ·  out ${eff(o.exit, textParams.exit)}`,
           `gest   ${(() => {
             if (!gesturesOnRef.current) return 'off (G)'

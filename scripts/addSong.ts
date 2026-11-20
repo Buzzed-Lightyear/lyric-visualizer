@@ -30,10 +30,19 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { parseFile } from 'music-metadata'
 import { parseMeta, songSlug, type SemanticsSource, type SongMeta } from '../src/library'
-import { choosePresets, libraryLook, withLook, writeLookOnly, type LibraryLook } from '../src/lookGen'
+import {
+  choosePresets,
+  libraryLook,
+  reviewPresets,
+  withLook,
+  writeLookOnly,
+  type LibraryLook,
+  type ReviewResult,
+  type StripSource,
+} from '../src/lookGen'
 import { parseLrc, type LyricLine } from '../src/lrc'
 import { parseLyricsfile, parseTrack, pickSearchResult, wordTimesForLrc } from '../src/lrclib'
-import { feedbackFor, parseFeedbackFile, type Feedback } from '../src/presetPick'
+import { CATALOG, feedbackFor, parseFeedbackFile, type Feedback } from '../src/presetPick'
 import { diffReport, neutralSemantics } from '../src/semanticsChecks'
 import { parseSemantics, type SongLook } from '../src/semantics'
 import { apiAsk, extractionInput, generateSemantics } from './generateSemantics'
@@ -214,6 +223,38 @@ function libraryContext(exceptSlug: string): LibraryLook[] {
   return looks
 }
 
+/**
+ * The preset strips `npm run catalog` rendered (catalog-strips/, not in
+ * git), as base64 PNGs for the image review. Null for a preset whose
+ * strip is not on disk; then the review is skipped and says so.
+ */
+function stripSource(): StripSource {
+  const cache = new Map<string, string | null>()
+  return (name) => {
+    if (!cache.has(name)) {
+      const entry = Object.hasOwn(CATALOG, name) ? CATALOG[name] : undefined
+      const file = entry ? path.resolve('catalog-strips', `${entry.slug}.png`) : null
+      cache.set(name, file && fs.existsSync(file) ? fs.readFileSync(file).toString('base64') : null)
+    }
+    return cache.get(name) ?? null
+  }
+}
+
+function reportReview(review: ReviewResult, summary: string[]): void {
+  if (!review.ran) {
+    summary.push(`review: SKIPPED, the scenes were chosen from text only (${review.skipped})`)
+    return
+  }
+  summary.push(
+    `review: the model looked at the strips; ${review.swaps.length} swapped, ` +
+      `${review.kept.length} marked but kept`,
+  )
+  for (const swap of review.swaps) {
+    summary.push(`  ${swap.label}: ${swap.from} -> ${swap.to} (${swap.reason})`)
+  }
+  for (const kept of review.kept) summary.push(`  ${kept.label}: kept ${kept.preset} (${kept.reason})`)
+}
+
 function reportScenes(
   result: { from: 'model' | 'scorer'; presets: Record<string, string>; problems: string[] },
   summary: string[],
@@ -284,12 +325,27 @@ async function makeLook(dir: string, slug: string, meta: SongMeta, summary: stri
     ask,
     console.log,
   )
+  console.log('reviewing the scenes against their strips...')
+  const review = await reviewPresets(
+    {
+      title: meta.title,
+      artist: meta.artist,
+      look: draft,
+      sections: semantics.sections,
+      presets: chosen.presets,
+      feedback,
+    },
+    stripSource(),
+    ask,
+    console.log,
+  )
   const look: SongLook = {
     description: draft.description,
     palette: draft.palette,
     voices: draft.voices,
-    presets: chosen.presets,
+    presets: review.presets,
     presetsFrom: chosen.from,
+    review: { ran: review.ran, swapped: review.swaps.map((swap) => swap.label) },
     ...(kept.source ? { source: kept.source } : {}),
     ...(kept.partial ? { partial: true } : {}),
   }
@@ -308,6 +364,7 @@ async function makeLook(dir: string, slug: string, meta: SongMeta, summary: stri
       : 'look: kept as written',
   )
   reportScenes(chosen, summary)
+  reportReview(review, summary)
 }
 
 /** Generate (API or neutral fallback); returns the semantics source used. */
@@ -332,6 +389,7 @@ async function makeSemantics(
     const result = await generateSemantics(input, lrcLines, {
       feedback: loadFeedback(slug),
       library: libraryContext(slug),
+      strips: stripSource(),
     })
     if (!result.doc) {
       console.error('semantics generation failed; NOT writing a bad file:')
@@ -342,6 +400,7 @@ async function makeSemantics(
     doc = result.doc
     source = 'api'
     if (result.presets) reportScenes(result.presets, summary)
+    if (result.review) reportReview(result.review, summary)
   } else {
     console.log(
       'no ANTHROPIC_API_KEY in .env: writing the NEUTRAL fallback\n' +

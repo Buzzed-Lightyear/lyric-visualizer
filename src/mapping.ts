@@ -159,6 +159,14 @@ export interface TextParams {
   fill: Rgb
   accent: Rgb
   tint: Rgb
+  /** The section's background color: the source of the dark text tone. */
+  background: Rgb
+  /**
+   * Accent colors a focus word may take, in order of preference: the
+   * section's own accent, then the rest of the song's palette. One is
+   * used only if it clears the contrast floor (src/legibility.ts).
+   */
+  accents: Rgb[]
   /** Energy -> how hard forces act. */
   forceScale: number
   /** Emphasis -> size multiplier on the base font size. */
@@ -231,6 +239,7 @@ export function layoutForLine(emphasis: number): LayoutName {
 const NEUTRAL_FILL: Rgb = [232, 238, 248]
 const NEUTRAL_ACCENT: Rgb = [255, 180, 90]
 const NEUTRAL_TINT: Rgb = [255, 148, 64]
+const NEUTRAL_BACKGROUND: Rgb = [8, 10, 18]
 
 /** Per-line choreography: the base grammar (a refrain reuses its source
  * line's), plus the focus words and the gestures they perform. */
@@ -254,6 +263,11 @@ export function textParamsForLine(
   const grammar = motion.grammar ?? sectionGrammar(section, look)
   const energy = section?.energy ?? 0.5
   const palette = section?.palette.map(hexToRgb)
+  const accent = palette?.[3] ?? palette?.[1] ?? NEUTRAL_ACCENT
+  const accents: Rgb[] = [accent]
+  for (const color of (look?.palette ?? []).slice(1).map(hexToRgb)) {
+    if (!accents.some((have) => have.every((v, i) => v === color[i]))) accents.push(color)
+  }
   return {
     // Lines at emphasis 0.85 or above switch to the accent voice.
     voice: emphasis >= TEXT.shatterEmphasis ? grammar.accentVoice : grammar.voice,
@@ -265,8 +279,10 @@ export function textParamsForLine(
     focus: [...(motion.focus ?? [])],
     gestures: [...(motion.gestures ?? [])],
     fill: palette?.[2] ?? NEUTRAL_FILL,
-    accent: palette?.[3] ?? palette?.[1] ?? NEUTRAL_ACCENT,
+    accent,
     tint: palette?.[1] ?? NEUTRAL_TINT,
+    background: palette?.[0] ?? NEUTRAL_BACKGROUND,
+    accents,
     forceScale: TEXT.forceBase + energy * TEXT.forceEnergy,
     sizeScale: 0.75 + emphasis * 0.5,
     scrim: Math.min(1, TEXT.scrimBase + emphasis * TEXT.scrimEmphasis),
