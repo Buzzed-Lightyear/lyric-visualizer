@@ -22,6 +22,10 @@
       "outro": "_Krash + Eo.S. - Photographic Sentinel"
     },
     "presetsFrom": "model",
+    "review": {
+      "ran": true,
+      "swapped": []
+    },
     "source": "agent",
     "partial": true
   },

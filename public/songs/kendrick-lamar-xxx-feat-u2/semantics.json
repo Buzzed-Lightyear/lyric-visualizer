@@ -15,18 +15,26 @@
       "accent": "serif"
     },
     "presets": {
-      "intro": "flexi + fishbrain - witchcraft [complex terraforming]",
+      "intro": "Zylot - In death there is life (Geiss Layered Mix)",
       "verse 1": "Flexi - wild at range",
       "hook": "Geiss - Reaction Diffusion 3 (Lichen Mix)",
       "verse 2": "martin - city of shadows",
       "verse 3": "Martin - cool morning",
-      "climax": "beta106i - Brilliance (Space-Time Breaking) - mash0000 - it′s 2009 and you haven′t replaced your analog tv with digital",
+      "climax": "TonyMilkdrop - Magellan's Nebula [Flexi - you enter first + multiverse]",
       "aside": "suksma - heretical crosscut playpen",
       "transition": "Rovastar & Loadus + Zylot - FractalDrop (Spark Machine v2.0)",
-      "chorus": "Zylot - Star Ornament",
+      "chorus": "Flexi + Martin - tunnel of supraschismatika",
       "verse 4": "Studio Music and Unchained - Rapid Alteration"
     },
     "presetsFrom": "model",
+    "review": {
+      "ran": true,
+      "swapped": [
+        "intro",
+        "climax",
+        "chorus"
+      ]
+    },
     "source": "agent",
     "partial": true
   },

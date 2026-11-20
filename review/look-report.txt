@@ -32,14 +32,14 @@ per song:
     imagery: 7 (embers; fire; gunmetal; night-sky; sirens; smoke; sparks)
   kendrick-lamar-xxx-feat-u2
     presets: 8 distinct for 10 labels (chosen by the scorer)
-    your saved choices play instead on 10 of 10 labels
+    your kept choices play instead on 10 of 10 labels
     voices:  main whisper, mono, condensed, slab, serif, block, air / accent condensed, marker (from mood anchors)
     palette: #d9a441 #e0763a #e03535 #b8872f #4a7ab5 #ff3b2f #8a8f9c #5a6b8f #8fc1ff #8f3e4e
     moods:   9 (brooding; furious; grieving; hollow; menacing; mournful; suspended; tense; weary)
     imagery: 12 (city-night; embers; flag; fluorescent; gunmetal; night-sky; prayer; rain; sirens; smoke; stars;…)
   ski-mask-the-slump-god-catch-me-outside-2
     presets: 4 distinct for 5 labels (chosen by the scorer)
-    your saved choices play instead on 1 of 5 labels
+    your kept choices play instead on 1 of 5 labels
     voices:  main mono, condensed, block, air / accent marker, condensed (from mood anchors)
     palette: #3a2a6b #b0121b #1d4ed8 #0f766e
     moods:   4 (furious; menacing; suspended; tense)
@@ -94,38 +94,42 @@ measured text readability of the picks: median 0.56, lowest 0.02
 per song:
   dj-mykael-v-tr-be-on-the-move
     presets: 5 distinct for 5 labels (chosen by the model; look is partial)
+    review:  the strips were looked at; 2 swapped (verse 2, verse 3)
     voices:  main serif / accent block (from look)
     palette: #0b0a0f #c9a227 #ff6a00 #b22222 #8a8f99 #3a4a7a
     moods:   5 (brooding; furious; menacing; suspended; tense)
     imagery: 8 (city-night; embers; fire; gunmetal; haze; prayer; sparks; streetlights)
   kanye-west-black-skinhead
     presets: 6 distinct for 6 labels (chosen by the model; look is partial)
+    review:  the strips were looked at; 1 swapped (outro)
     voices:  main block / accent condensed (from look)
     palette: #050505 #8b0d14 #c41e1e #ff3b1f #3a3a40 #f2f2f2
     moods:   3 (furious; menacing; tense)
     imagery: 7 (embers; fire; gunmetal; night-sky; sirens; smoke; sparks)
   kendrick-lamar-xxx-feat-u2
     presets: 10 distinct for 10 labels (chosen by the model; look is partial)
-    your saved choices play instead on 10 of 10 labels
+    review:  the strips were looked at; 3 swapped (intro, climax, chorus)
     voices:  main mono / accent serif (from look)
     palette: #0a0d1a #e03535 #e0763a #d9a441 #8fc1ff #cfd9ee
     moods:   9 (brooding; furious; grieving; hollow; menacing; mournful; suspended; tense; weary)
     imagery: 12 (city-night; embers; flag; fluorescent; gunmetal; night-sky; prayer; rain; sirens; smoke; stars;…)
   ski-mask-the-slump-god-catch-me-outside-2
     presets: 5 distinct for 5 labels (chosen by the model; look is partial)
-    your saved choices play instead on 1 of 5 labels
+    review:  the strips were looked at; 0 swapped
     voices:  main marker / accent block (from look)
     palette: #05060f #8a5cff #1d4ed8 #22c55e #b0121b #c7d2fe
     moods:   4 (furious; menacing; suspended; tense)
     imagery: 8 (fire; fog; gunmetal; haze; night-sky; smoke; sparks; streetlights)
   tame-impala-dracula-with-jennie
     presets: 8 distinct for 8 labels (chosen by the model; look is partial)
+    review:  the strips were looked at; 5 swapped (verse 1, verse 2, chorus, bridge, outro)
     voices:  main slab / accent whisper (from look)
     palette: #0b0614 #7a1f4a #c0143c #ff6a3d #3d2a7a #e0a0c0
     moods:   5 (brooding; calm; menacing; suspended; tense)
     imagery: 9 (city-night; embers; fluorescent; haze; night-sky; smoke; sparks; stars; streetlights)
   tame-impala-loser
     presets: 7 distinct for 7 labels (chosen by the model; look is partial)
+    review:  the strips were looked at; 1 swapped (verse 2)
     voices:  main air / accent marker (from look)
     palette: #0b0a1a #6a4c93 #c06c84 #f28482 #f2cc8f #4a4e69
     moods:   6 (brooding; calm; hollow; mournful; suspended; weary)

@@ -18,10 +18,17 @@
       "intro": "martin - ghost city",
       "verse 1": "11",
       "chorus": "martin - The Bridge of Khazad-Dum",
-      "verse 2": "suksma - water cooled red uranium vs dotes - freeenergynow.net",
-      "verse 3": "Stahlregen + martin + others - Psychedelic Metal Flower"
+      "verse 2": "flexi + fishbrain - warpcraft [random mashup]",
+      "verse 3": "martin - angel flight"
     },
     "presetsFrom": "model",
+    "review": {
+      "ran": true,
+      "swapped": [
+        "verse 2",
+        "verse 3"
+      ]
+    },
     "source": "agent",
     "partial": true
   },

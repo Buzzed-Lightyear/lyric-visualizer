@@ -20,9 +20,15 @@
       "chorus": "amandio c - salty beats - spiral",
       "bridge": "flexi - meta4free",
       "verse 2": "AdamFx 2 Geiss -Somewhat Distort Me 3_1",
-      "outro": "Rovastar + Geiss - Snapshot Of Space (LSB mix)"
+      "outro": "Cope - The Neverending Explosion of Red Liquid Fire"
     },
     "presetsFrom": "model",
+    "review": {
+      "ran": true,
+      "swapped": [
+        "outro"
+      ]
+    },
     "source": "agent",
     "partial": true
   },

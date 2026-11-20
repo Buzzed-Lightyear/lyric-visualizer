@@ -18,12 +18,18 @@
       "intro": "martin - sunset over the river",
       "verse 1": "fiShbRaiN + Flexi - witchcraft 2.0",
       "chorus": "suksma - nip tuck",
-      "verse 2": "Rovastar + Flexi - Hurricane Nightmare (Moebius Mix)",
+      "verse 2": "beta106i - Potion of Ink",
       "bridge": "Krash + Illusion - Spiral Movement",
       "verse 3": "amandio c - flashy thing",
       "outro": "_Geiss - Brain Zoom 3 (Color Emboss Mix)"
     },
     "presetsFrom": "model",
+    "review": {
+      "ran": true,
+      "swapped": [
+        "verse 2"
+      ]
+    },
     "source": "agent",
     "partial": true
   },

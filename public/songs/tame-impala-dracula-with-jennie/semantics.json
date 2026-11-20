@@ -16,15 +16,25 @@
     },
     "presets": {
       "intro": "fiShbRaiN - a quiet death",
-      "verse 1": "Phat_Zylot_Eo.S. square_faces_v2_alt_colours",
+      "verse 1": "158",
       "pre-chorus": "_Flexi, martin + geiss - painterly rogue wave strike (color emboss mix)",
-      "verse 2": "Martin - disco mix 6",
-      "chorus": "Martin - disco mix 3 -fast",
+      "verse 2": "martin - violet flash",
+      "chorus": "Flexi - mindblob 2.0",
       "verse 3": "flexi + fishbrain - neon mindblob grafitti",
-      "bridge": "martin - crystal alley",
-      "outro": "martin - dark galaxy"
+      "bridge": "martin - castle in the air",
+      "outro": "Flexi - piercing"
     },
     "presetsFrom": "model",
+    "review": {
+      "ran": true,
+      "swapped": [
+        "verse 1",
+        "verse 2",
+        "chorus",
+        "bridge",
+        "outro"
+      ]
+    },
     "source": "agent",
     "partial": true
   },
