@@ -1,11 +1,16 @@
 /**
  * npm run add-song -- <audio file> [options]
- * npm run add-song -- --song <slug> [--lyrics [path]] [--semantics [--side]]
+ * npm run add-song -- --song <slug> [--lyrics [path]] [--semantics [--side]] [--look]
  *
  * Adds a song to the library (public/songs/<slug>/): reads the tags, copies
  * the audio in, fetches synced lyrics from LRCLIB (word timing included
  * when they have it), gets semantics from the API (or writes the neutral
  * fallback without a key), and rebuilds the song index.
+ *
+ * With a key the model does two things: it reads the song and writes the
+ * version 3 semantics with the song's look; then, shown every usable
+ * preset and the looks of the songs already in the library, it chooses
+ * one preset per section label as one set for this song.
  *
  * Rerunning on an existing song refreshes only what the flags ask for and
  * never overwrites anything silently.
@@ -17,17 +22,30 @@
  *   --semantics         (re)generate the semantics file
  *   --side              write semantics to semantics.api.json instead and
  *                       print a diff against the existing semantics.json
+ *   --look              rewrite only the look of an existing semantics file:
+ *                       no lyrics needed, sections and lines stay as they are
  */
 
 import fs from 'node:fs'
 import path from 'node:path'
 import { parseFile } from 'music-metadata'
-import { songSlug, type SemanticsSource, type SongMeta } from '../src/library'
+import { parseMeta, songSlug, type SemanticsSource, type SongMeta } from '../src/library'
+import {
+  choosePresets,
+  libraryLook,
+  reviewPresets,
+  withLook,
+  writeLookOnly,
+  type LibraryLook,
+  type ReviewResult,
+  type StripSource,
+} from '../src/lookGen'
 import { parseLrc, type LyricLine } from '../src/lrc'
 import { parseLyricsfile, parseTrack, pickSearchResult, wordTimesForLrc } from '../src/lrclib'
+import { CATALOG, feedbackFor, parseFeedbackFile, type Feedback } from '../src/presetPick'
 import { diffReport, neutralSemantics } from '../src/semanticsChecks'
-import { parseSemantics } from '../src/semantics'
-import { extractionInput, generateSemantics } from './generateSemantics'
+import { parseSemantics, type SongLook } from '../src/semantics'
+import { apiAsk, extractionInput, generateSemantics } from './generateSemantics'
 import { rebuildIndex, SONGS_DIR } from './songIndex'
 
 const LRCLIB = 'https://lrclib.net'
@@ -46,6 +64,7 @@ interface Args {
   lyrics: 'fetch' | string | null
   semantics: boolean
   side: boolean
+  look: boolean
 }
 
 function parseArgsList(argv: string[]): Args {
@@ -60,6 +79,7 @@ function parseArgsList(argv: string[]): Args {
     lyrics: null,
     semantics: false,
     side: false,
+    look: false,
   }
   const takesValue = new Set(['--song', '--slug', '--title', '--artist', '--album', '--duration'])
   for (let i = 0; i < argv.length; i++) {
@@ -82,6 +102,8 @@ function parseArgsList(argv: string[]): Args {
       args.semantics = true
     } else if (arg === '--side') {
       args.side = true
+    } else if (arg === '--look') {
+      args.look = true
     } else if (!arg.startsWith('--') && args.audioPath === null) {
       args.audioPath = arg
     } else {
@@ -173,9 +195,182 @@ function loadLrc(dir: string): LyricLine[] {
   return fs.existsSync(file) ? parseLrc(fs.readFileSync(file, 'utf8')) : []
 }
 
+/** Global bans plus this song's saved choices, from src/presetFeedback.json. */
+function loadFeedback(slug: string): Feedback {
+  const file = path.resolve('src/presetFeedback.json')
+  const parsed = parseFeedbackFile(fs.existsSync(file) ? readJson(file) : null)
+  return feedbackFor(parsed, slug)
+}
+
+/**
+ * The other songs in the library as the model is shown them: each one's
+ * look (when it has one) and the presets it plays. Carries no lyric text.
+ */
+function libraryContext(exceptSlug: string): LibraryLook[] {
+  const looks: LibraryLook[] = []
+  if (!fs.existsSync(SONGS_DIR)) return looks
+  for (const name of fs.readdirSync(SONGS_DIR).sort()) {
+    if (name === exceptSlug) continue
+    const metaFile = path.join(SONGS_DIR, name, 'meta.json')
+    const semanticsFile = path.join(SONGS_DIR, name, 'semantics.json')
+    if (!fs.existsSync(metaFile) || !fs.existsSync(semanticsFile)) continue
+    const { meta } = parseMeta(readJson(metaFile))
+    const { semantics } = parseSemantics(readJson(semanticsFile))
+    // A neutral-fallback song has no look of its own to stand next to.
+    if (!meta || !semantics || meta.semantics === 'neutral') continue
+    looks.push(libraryLook(meta, semantics.sections, semantics.look ?? null, loadFeedback(name)))
+  }
+  return looks
+}
+
+/**
+ * The preset strips `npm run catalog` rendered (catalog-strips/, not in
+ * git), as base64 PNGs for the image review. Null for a preset whose
+ * strip is not on disk; then the review is skipped and says so.
+ */
+function stripSource(): StripSource {
+  const cache = new Map<string, string | null>()
+  return (name) => {
+    if (!cache.has(name)) {
+      const entry = Object.hasOwn(CATALOG, name) ? CATALOG[name] : undefined
+      const file = entry ? path.resolve('catalog-strips', `${entry.slug}.png`) : null
+      cache.set(name, file && fs.existsSync(file) ? fs.readFileSync(file).toString('base64') : null)
+    }
+    return cache.get(name) ?? null
+  }
+}
+
+function reportReview(review: ReviewResult, summary: string[]): void {
+  if (!review.ran) {
+    summary.push(`review: SKIPPED, the scenes were chosen from text only (${review.skipped})`)
+    return
+  }
+  summary.push(
+    `review: the model looked at the strips; ${review.swaps.length} swapped, ` +
+      `${review.kept.length} marked but kept`,
+  )
+  for (const swap of review.swaps) {
+    summary.push(`  ${swap.label}: ${swap.from} -> ${swap.to} (${swap.reason})`)
+  }
+  for (const kept of review.kept) summary.push(`  ${kept.label}: kept ${kept.preset} (${kept.reason})`)
+}
+
+function reportScenes(
+  result: { from: 'model' | 'scorer'; presets: Record<string, string>; problems: string[] },
+  summary: string[],
+): void {
+  const count = Object.keys(result.presets).length
+  if (result.from === 'model') {
+    summary.push(`scenes: ${count} presets chosen by the model as one set`)
+  } else {
+    summary.push(
+      `scenes: the model's set stayed invalid, so the SCORER picked ${count} presets ` +
+        `(recorded as look.presetsFrom "scorer"): ${result.problems.slice(0, 2).join('; ')}`,
+    )
+  }
+}
+
+/**
+ * --look: rewrite only the look of an existing semantics file. A file
+ * without a look (or with a partial one) gets a description, palette and
+ * voices written from its sections, title and artist — marked partial,
+ * because its sections keep their old shape. A full look keeps its words.
+ * Either way the model then chooses the scenes again.
+ */
+async function makeLook(dir: string, slug: string, meta: SongMeta, summary: string[]): Promise<void> {
+  if (!process.env.ANTHROPIC_API_KEY) fail('--look needs ANTHROPIC_API_KEY in .env')
+  if (meta.semantics === 'neutral') {
+    fail('this song has the neutral fallback; run --semantics first (a look needs real sections)')
+  }
+  const file = path.join(dir, 'semantics.json')
+  if (!fs.existsSync(file)) fail(`no semantics.json for ${slug}; run --semantics first`)
+  const raw = readJson(file)
+  const { semantics, errors } = parseSemantics(raw)
+  if (!semantics) fail(`semantics.json is invalid: ${errors.slice(0, 3).join('; ')}`)
+
+  const ask = apiAsk()
+  const feedback = loadFeedback(slug)
+  let draft: Pick<SongLook, 'description' | 'palette' | 'voices'>
+  let kept: Pick<SongLook, 'source' | 'partial'>
+  if (semantics.look && !semantics.look.partial) {
+    console.log('keeping the look as written; choosing the scenes again...')
+    draft = semantics.look
+    kept = { source: semantics.look.source }
+  } else {
+    console.log('writing a look from the existing sections (no lyrics)...')
+    const written = await writeLookOnly(
+      { title: meta.title, artist: meta.artist, durationSec: meta.duration, sections: semantics.sections },
+      ask,
+      console.log,
+    )
+    if (!written.look) {
+      console.error('could not write a look; nothing changed:')
+      for (const error of written.errors) console.error(`  - ${error}`)
+      summary.push('look: FAILED (nothing written)')
+      return
+    }
+    draft = written.look
+    kept = { source: 'api', partial: true }
+  }
+  console.log('choosing the scenes...')
+  const chosen = await choosePresets(
+    {
+      title: meta.title,
+      artist: meta.artist,
+      look: draft,
+      sections: semantics.sections,
+      feedback,
+      library: libraryContext(slug),
+    },
+    ask,
+    console.log,
+  )
+  console.log('reviewing the scenes against their strips...')
+  const review = await reviewPresets(
+    {
+      title: meta.title,
+      artist: meta.artist,
+      look: draft,
+      sections: semantics.sections,
+      presets: chosen.presets,
+      feedback,
+    },
+    stripSource(),
+    ask,
+    console.log,
+  )
+  const look: SongLook = {
+    description: draft.description,
+    palette: draft.palette,
+    voices: draft.voices,
+    presets: review.presets,
+    presetsFrom: chosen.from,
+    review: { ran: review.ran, swapped: review.swaps.map((swap) => swap.label) },
+    ...(kept.source ? { source: kept.source } : {}),
+    ...(kept.partial ? { partial: true } : {}),
+  }
+  const next = withLook(raw, look)
+  const check = parseSemantics(next)
+  if (!check.semantics) {
+    console.error('the new look does not validate; nothing changed:')
+    for (const error of check.errors) console.error(`  - ${error}`)
+    summary.push('look: FAILED (nothing written)')
+    return
+  }
+  writeJson(file, next)
+  summary.push(
+    kept.partial
+      ? 'look: written from the existing sections (partial: rerun --semantics with lyrics for the full version 3 file)'
+      : 'look: kept as written',
+  )
+  reportScenes(chosen, summary)
+  reportReview(review, summary)
+}
+
 /** Generate (API or neutral fallback); returns the semantics source used. */
 async function makeSemantics(
   dir: string,
+  slug: string,
   meta: SongMeta,
   side: boolean,
   summary: string[],
@@ -191,7 +386,11 @@ async function makeSemantics(
       fail('no lyrics to annotate; add lyrics first')
     }
     const input = extractionInput(meta.title, meta.artist, meta.duration, lrcLines)
-    const result = await generateSemantics(input, lrcLines)
+    const result = await generateSemantics(input, lrcLines, {
+      feedback: loadFeedback(slug),
+      library: libraryContext(slug),
+      strips: stripSource(),
+    })
     if (!result.doc) {
       console.error('semantics generation failed; NOT writing a bad file:')
       for (const error of result.errors) console.error(`  - ${error}`)
@@ -200,6 +399,8 @@ async function makeSemantics(
     }
     doc = result.doc
     source = 'api'
+    if (result.presets) reportScenes(result.presets, summary)
+    if (result.review) reportReview(result.review, summary)
   } else {
     console.log(
       'no ANTHROPIC_API_KEY in .env: writing the NEUTRAL fallback\n' +
@@ -244,21 +445,24 @@ async function main(): Promise<void> {
   if (refreshing) {
     const slug = asSlug!
     const dir = refreshDir!
-    if (!args.lyrics && !args.semantics) {
+    if (!args.lyrics && !args.semantics && !args.look) {
       fail(
         `"${slug}" already exists. Nothing is overwritten unless you ask:\n` +
           `  --lyrics [path]   refresh the lyrics (and word timing)\n` +
-          `  --semantics       regenerate the semantics (add --side to keep the current file)`,
+          `  --semantics       regenerate the semantics (add --side to keep the current file)\n` +
+          `  --look            rewrite only the look (no lyrics needed)`,
       )
     }
+    if (args.look && args.semantics) fail('--semantics already writes the look; drop --look')
     const metaRaw = readJson(path.join(dir, 'meta.json')) as SongMeta
     console.log(`refreshing ${slug} ("${metaRaw.title}")`)
     if (args.lyrics === 'fetch') await fetchLyrics(dir, metaRaw, summary)
     else if (args.lyrics) importLocalLyrics(dir, args.lyrics, summary)
     if (args.semantics) {
-      const source = await makeSemantics(dir, metaRaw, args.side, summary)
+      const source = await makeSemantics(dir, slug, metaRaw, args.side, summary)
       if (source) writeJson(path.join(dir, 'meta.json'), { ...metaRaw, semantics: source })
     }
+    if (args.look) await makeLook(dir, slug, metaRaw, summary)
   } else {
     // New song from an audio file.
     if (!args.audioPath) fail('usage: npm run add-song -- <audio file> [options]')
@@ -293,7 +497,7 @@ async function main(): Promise<void> {
     } else {
       await fetchLyrics(dir, meta, summary)
     }
-    const source = await makeSemantics(dir, meta, args.side, summary)
+    const source = await makeSemantics(dir, slug, meta, args.side, summary)
     if (source) meta.semantics = source
     writeJson(path.join(dir, 'meta.json'), meta)
   }

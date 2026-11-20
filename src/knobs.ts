@@ -13,6 +13,7 @@ const GROUPS: Record<string, Record<string, unknown>> = {
   analysis: TUNING.ANALYSIS,
   beat: TUNING.BEAT,
   text: TUNING.TEXT,
+  'readable text': TUNING.LEGIBLE,
   typeset: TUNING.TYPESET,
   gestures: TUNING.GESTURE_T,
   legibility: TUNING.LEGIBILITY,
@@ -58,6 +59,8 @@ export interface Knobs {
 
 export interface KnobActions {
   resetPresetFeedback?: () => void
+  /** Forget this song's kept preset choices (P); bans stay. */
+  clearKeptChoices?: () => void
 }
 
 export function createKnobs(actions: KnobActions = {}): Knobs {
@@ -66,6 +69,11 @@ export function createKnobs(actions: KnobActions = {}): Knobs {
   for (const [name, group] of Object.entries(GROUPS)) {
     const folder = pane.addFolder({ title: name, expanded: false })
     for (const [key, value] of Object.entries(group)) {
+      if (typeof value === 'boolean') {
+        // A plain switch (e.g. readable text › oldScrim, for A/B).
+        folder.addBinding(group as Record<string, boolean>, key)
+        continue
+      }
       if (SKIP.has(key) || typeof value !== 'number') continue
       const span = value === 0 ? 1 : Math.abs(value) * 4
       folder.addBinding(group as Record<string, number>, key, {
@@ -78,6 +86,11 @@ export function createKnobs(actions: KnobActions = {}): Knobs {
   pane
     .addButton({ title: 'log values to console' })
     .on('click', () => console.log(JSON.stringify(TUNING, null, 2)))
+  if (actions.clearKeptChoices) {
+    pane
+      .addButton({ title: "clear this song's kept choices" })
+      .on('click', actions.clearKeptChoices)
+  }
   if (actions.resetPresetFeedback) {
     pane
       .addButton({ title: 'reset preset feedback' })

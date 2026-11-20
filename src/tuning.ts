@@ -245,6 +245,39 @@ export const TEXT = {
 }
 
 /**
+ * Readable text over any background (src/legibility.ts): adaptive light
+ * or dark text with a text-hugging backing, sized from a sample of the
+ * background behind each line.
+ */
+export const LEGIBLE = {
+  /** A/B: true brings back the old look — global scrim, fixed colors. */
+  oldScrim: false,
+  /** Contrast the backing is sized for (text against its surround). */
+  targetContrast: 4.5,
+  /** Contrast floor: an accent color must clear it to be used. */
+  floor: 3,
+  /** Headroom on the floor when the accent is decided at line entry. */
+  accentMargin: 1.1,
+  /** Polarity flips only if the other tone needs this much less backing. */
+  hysteresis: 0.2,
+  /** Backing strengthens fast and relaxes slowly (per second). */
+  attack: 14,
+  release: 2.5,
+  /** Below this strength no backing is drawn at all. */
+  minStrength: 0.03,
+  /** The halo, in ems: a tight ring at full strength, a wider faint one. */
+  innerWidth: 0.11,
+  outerWidth: 0.26,
+  outerAlpha: 0.45,
+  /** Padding around the line when reading the background, in ems. */
+  regionPad: 0.3,
+  /** Background sample grid, and how many frames pass between samples. */
+  sampleW: 96,
+  sampleH: 54,
+  sampleEvery: 4,
+}
+
+/**
  * Typesetting: spacing, leading, wrapping, anchors and hierarchy. Word
  * space and leading are derived from each font's own metrics (space
  * advance, ascent + descent); these knobs scale that, they never replace

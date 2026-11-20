@@ -25,8 +25,9 @@ const GROUPS: { title: string; keys: [string, string][] }[] = [
   {
     title: 'Background presets',
     keys: [
-      ['[ ]', 'Previous / next candidate for this section (saved)'],
-      ['{ }', 'Browse the whole catalog (nothing saved)'],
+      ['[ ]', 'Preview previous / next candidate for this section (not saved)'],
+      ['P', 'Keep the preset on screen for this section in this song'],
+      ['{ }', 'Browse the whole catalog (not saved)'],
       ['N', 'Ban the current preset everywhere'],
     ],
   },

@@ -48,6 +48,14 @@ export const THRESHOLDS = {
   /** Butterchurn smoke: minimum luminance stddev of a rendered frame. */
   butterchurnMinStdDev: 2,
   /**
+   * Readable text: the WCAG contrast ratio between glyph pixels and
+   * their immediate surround (backing included), sampled over the four
+   * strip frames of every scene a song plays...
+   */
+  textContrastFloor: 3,
+  /** ...and the share of samples per scene that must reach it. */
+  textContrastShare: 0.95,
+  /**
    * Tagging control presets: max mean-absolute-deviation from the
    * cross-batch median, per axis, for batches to count as agreeing.
    */

@@ -7,6 +7,7 @@
 
 import type { TypeStyle } from './layout'
 import { TYPESET } from './tuning'
+import { VOICES, type Voice, type VoiceName } from './voiceNames'
 
 import '@fontsource/archivo-black'
 import '@fontsource/inter/300.css'
@@ -17,45 +18,9 @@ import '@fontsource/space-mono'
 import '@fontsource/permanent-marker'
 import '@fontsource/alfa-slab-one'
 
-export type VoiceName =
-  | 'block'
-  | 'air'
-  | 'condensed'
-  | 'serif'
-  | 'whisper'
-  | 'mono'
-  | 'marker'
-  | 'slab'
+export type { VoiceName } from './voiceNames'
 
-export interface Voice {
-  family: string
-  weight: number
-  italic: boolean
-  caps: boolean
-  /** Letter tracking in ems. */
-  tracking: number
-  /** Word-space factor on the font's own space advance. */
-  wordSpace: number
-}
-
-export const VOICES: Record<VoiceName, Voice> = {
-  /** Heavy geometric display. */
-  block: { family: '"Archivo Black"', weight: 400, italic: false, caps: true, tracking: 0.02, wordSpace: 1 },
-  /** Light, airy sans. */
-  air: { family: 'Inter', weight: 300, italic: false, caps: false, tracking: 0.12, wordSpace: 1.25 },
-  /** Condensed caps display. */
-  condensed: { family: 'Anton', weight: 400, italic: false, caps: true, tracking: 0.06, wordSpace: 1.15 },
-  /** High-contrast serif. */
-  serif: { family: '"Playfair Display"', weight: 700, italic: false, caps: false, tracking: 0.02, wordSpace: 1.15 },
-  /** Delicate serif italic. */
-  whisper: { family: '"Cormorant Garamond"', weight: 500, italic: true, caps: false, tracking: 0.1, wordSpace: 1.35 },
-  /** Typewriter mono. */
-  mono: { family: '"Space Mono"', weight: 400, italic: false, caps: false, tracking: 0.04, wordSpace: 1 },
-  /** Marker / brush. */
-  marker: { family: '"Permanent Marker"', weight: 400, italic: false, caps: false, tracking: 0.03, wordSpace: 1.05 },
-  /** Fat slab. */
-  slab: { family: '"Alfa Slab One"', weight: 400, italic: false, caps: false, tracking: 0.03, wordSpace: 1.05 },
-}
+export { VOICES, type Voice } from './voiceNames'
 
 export const VOICE_NAMES = Object.keys(VOICES) as VoiceName[]
 

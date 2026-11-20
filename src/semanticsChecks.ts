@@ -75,13 +75,28 @@ export function automaticChecks(
   // apart from their times.
   const byLabel = new Map<string, string>()
   for (const section of semantics.sections) {
-    const signature = JSON.stringify([section.energy, section.mood, section.palette, section.imagery])
+    const signature = JSON.stringify([
+      section.energy,
+      section.mood,
+      section.palette,
+      section.imagery,
+      section.axes ?? null,
+      section.scene ?? null,
+      section.voice ?? null,
+    ])
     const seen = byLabel.get(section.label)
     if (seen === undefined) byLabel.set(section.label, signature)
     else if (seen !== signature) {
-      problems.push(`sections labeled "${section.label}" disagree on energy/mood/palette/imagery`)
+      problems.push(
+        `sections labeled "${section.label}" disagree on energy/mood/palette/imagery` +
+          (section.axes ? '/axes/scene/voice' : ''),
+      )
     }
   }
+
+  // No lyric text: the free-text fields of a version 3 file must be the
+  // model's own words.
+  problems.push(...lyricEchoProblems(freeTextFields(semantics), sung))
 
   // Refrains consistent: a repeat of an earlier line must not carry a
   // different gesture than its source (none is fine — the renderer copies
@@ -101,6 +116,69 @@ export function automaticChecks(
     }
   })
 
+  return problems
+}
+
+// --- no lyric text ---------------------------------------------------------------
+
+/** A run of this many words shared with one lyric line counts as quoting it. */
+export const ECHO_WORDS = 4
+
+const echoWords = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9'\s]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+
+/** Every free-text field of a semantics document, with where it sits. */
+export function freeTextFields(semantics: Semantics): { where: string; text: string }[] {
+  const fields: { where: string; text: string }[] = []
+  if (semantics.look) fields.push({ where: 'look.description', text: semantics.look.description })
+  for (const section of semantics.sections) {
+    const where = `sections "${section.label}"`
+    fields.push({ where: `${where} mood`, text: section.mood })
+    for (const tag of section.imagery) fields.push({ where: `${where} imagery`, text: tag })
+    if (section.scene !== undefined) fields.push({ where: `${where} scene`, text: section.scene })
+  }
+  return fields
+}
+
+/**
+ * Committed files never contain lyric text. Flags any free-text field
+ * that repeats ECHO_WORDS or more consecutive words of a lyric line. The
+ * message names the line by its time, never by its words.
+ */
+export function lyricEchoProblems(
+  fields: readonly { where: string; text: string }[],
+  lyricLines: readonly { time: number; text: string }[],
+): string[] {
+  const runs = new Map<string, number>() // word run -> line time
+  for (const line of lyricLines) {
+    const words = echoWords(line.text)
+    for (let i = 0; i + ECHO_WORDS <= words.length; i++) {
+      const run = words.slice(i, i + ECHO_WORDS).join(' ')
+      if (!runs.has(run)) runs.set(run, line.time)
+    }
+  }
+  const problems: string[] = []
+  const seen = new Set<string>()
+  for (const field of fields) {
+    const words = echoWords(field.text)
+    for (let i = 0; i + ECHO_WORDS <= words.length; i++) {
+      const time = runs.get(words.slice(i, i + ECHO_WORDS).join(' '))
+      if (time === undefined) continue
+      const key = `${field.where}@${time}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        problems.push(
+          `${field.where} repeats ${ECHO_WORDS}+ words in a row from the lyric line at ${time}s; ` +
+            `describe it in your own words (no lyric text in this file)`,
+        )
+      }
+      break
+    }
+  }
   return problems
 }
 

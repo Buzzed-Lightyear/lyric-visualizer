@@ -1,5 +1,43 @@
 {
-  "version": 2,
+  "version": 3,
+  "look": {
+    "description": "A velvet-dark disco in a vampire's colors: wine, crimson and rose glowing out of deep violet, slick and nocturnal. It glides and pulses like a dance floor long after midnight — seductive, a little camp, never frantic — with one cold blue breath in the bridge before the red comes back.",
+    "palette": [
+      "#0b0614",
+      "#7a1f4a",
+      "#c0143c",
+      "#ff6a3d",
+      "#3d2a7a",
+      "#e0a0c0"
+    ],
+    "voices": {
+      "main": "slab",
+      "accent": "whisper"
+    },
+    "presets": {
+      "intro": "fiShbRaiN - a quiet death",
+      "verse 1": "158",
+      "pre-chorus": "_Flexi, martin + geiss - painterly rogue wave strike (color emboss mix)",
+      "verse 2": "martin - violet flash",
+      "chorus": "Flexi - mindblob 2.0",
+      "verse 3": "flexi + fishbrain - neon mindblob grafitti",
+      "bridge": "martin - castle in the air",
+      "outro": "Flexi - piercing"
+    },
+    "presetsFrom": "model",
+    "review": {
+      "ran": true,
+      "swapped": [
+        "verse 1",
+        "verse 2",
+        "chorus",
+        "bridge",
+        "outro"
+      ]
+    },
+    "source": "agent",
+    "partial": true
+  },
   "sections": [
     {
       "start": 0,

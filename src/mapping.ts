@@ -5,12 +5,17 @@
  * and how much. One hardcoded mapping; presets and seeds are step 5.
  */
 
+import { motionForAxes, nearestAnchor, sectionAxes } from './axes'
 import type { GestureAssignment } from './gestures'
 import type { AnchorName, LayoutName } from './layout'
 import type { EntranceName, ExitName, HoldName } from './parts'
-import type { SemanticSection } from './semantics'
+import type { SemanticSection, SongLook } from './semantics'
 import { MAPPING, SCENE, TEXT } from './tuning'
-import type { VoiceName } from './voices'
+import type { VoiceName } from './voiceNames'
+
+// The axes and their anchors live in src/axes.ts; re-exported for callers
+// that only know the mapping layer.
+export { moodAxes, NEUTRAL_AXES, type MoodAxes } from './axes'
 
 export type Motif = 'drift' | 'embers' | 'rain' | 'stars' | 'haze'
 
@@ -55,22 +60,6 @@ export const NEUTRAL_PARAMS: SceneParams = {
   motif: 'drift',
 }
 
-const NEUTRAL_MOTION = { jitter: 1, lift: 0 }
-
-/** Motion character per mood. Unknown moods get neutral motion. */
-const MOODS: Record<string, { jitter: number; lift: number }> = {
-  calm: { jitter: 0.5, lift: 0.1 },
-  tense: { jitter: 1.4, lift: 0 },
-  menacing: { jitter: 1.6, lift: -0.15 },
-  furious: { jitter: 2, lift: -0.1 },
-  weary: { jitter: 0.7, lift: -0.25 },
-  grieving: { jitter: 0.55, lift: -0.4 },
-  mournful: { jitter: 0.6, lift: 0.25 },
-  brooding: { jitter: 0.9, lift: -0.15 },
-  hollow: { jitter: 0.5, lift: 0 },
-  suspended: { jitter: 0.4, lift: 0.3 },
-}
-
 /**
  * Only the motifs this song's imagery needs. Near-synonyms land on the
  * closest motif; any unlisted tag falls through to haze (the most
@@ -96,16 +85,51 @@ const IMAGERY_TO_MOTIF: Record<string, Motif> = {
   fog: 'haze',
 }
 
-/** First imagery tag with a motif wins; none of them -> haze. */
-export function chooseMotif(imagery: readonly string[]): {
+/**
+ * A free-text tag's motif: the whole tag first, then each of its words
+ * (also tried with and without a plural "s"), so "cold rain" still
+ * lands on rain.
+ */
+function motifForFreeTag(tag: string): Motif | undefined {
+  for (const word of tag.split(/[^a-z]+/)) {
+    if (word === '') continue
+    for (const form of [word, `${word}s`, word.replace(/s$/, '')]) {
+      if (Object.hasOwn(IMAGERY_TO_MOTIF, form)) return IMAGERY_TO_MOTIF[form]
+    }
+  }
+  return undefined
+}
+
+/**
+ * First imagery tag with a motif wins; none of them -> haze. `freeText`
+ * (version 3 sections, whose tags are free text) also matches a tag by
+ * its words; without it only whole tags match, as they always did.
+ */
+export function chooseMotif(
+  imagery: readonly string[],
+  freeText = false,
+): {
   motif: Motif
   tag: string | null
 } {
   for (const tag of imagery) {
-    const motif = IMAGERY_TO_MOTIF[tag.toLowerCase()]
+    const key = tag.toLowerCase()
+    const motif = Object.hasOwn(IMAGERY_TO_MOTIF, key)
+      ? IMAGERY_TO_MOTIF[key]
+      : freeText
+        ? motifForFreeTag(key)
+        : undefined
     if (motif) return { motif, tag }
   }
   return { motif: 'haze', tag: null }
+}
+
+/** The motif for a section; version 3 sections (own axes) carry free-text tags. */
+export function motifForSection(section: SemanticSection | null): {
+  motif: Motif
+  tag: string | null
+} {
+  return chooseMotif(section?.imagery ?? [], section?.axes !== undefined)
 }
 
 function hexToRgb(hex: string): Rgb {
@@ -135,6 +159,14 @@ export interface TextParams {
   fill: Rgb
   accent: Rgb
   tint: Rgb
+  /** The section's background color: the source of the dark text tone. */
+  background: Rgb
+  /**
+   * Accent colors a focus word may take, in order of preference: the
+   * section's own accent, then the rest of the song's palette. One is
+   * used only if it clears the contrast floor (src/legibility.ts).
+   */
+  accents: Rgb[]
   /** Energy -> how hard forces act. */
   forceScale: number
   /** Emphasis -> size multiplier on the base font size. */
@@ -142,62 +174,6 @@ export interface TextParams {
   /** Emphasis -> scrim strength under the text. */
   scrim: number
   emphasis: number
-}
-
-interface MoodText {
-  hold: HoldName
-  voice: VoiceName
-  /** Lines at high emphasis may switch to this voice. */
-  accentVoice: VoiceName
-  anchor: AnchorName
-}
-
-const DEFAULT_TEXT: MoodText = { hold: 'bob', voice: 'air', accentVoice: 'marker', anchor: 'center' }
-
-/** Mood -> hold part, type voice and block anchor. Unknown moods get the default. */
-const MOOD_TEXT: Record<string, MoodText> = {
-  calm: { hold: 'bob', voice: 'air', accentVoice: 'condensed', anchor: 'center' },
-  mournful: { hold: 'bob', voice: 'whisper', accentVoice: 'condensed', anchor: 'center' },
-  suspended: { hold: 'still', voice: 'air', accentVoice: 'condensed', anchor: 'center' },
-  tense: { hold: 'tremble', voice: 'mono', accentVoice: 'marker', anchor: 'upperLeft' },
-  menacing: { hold: 'jolt', voice: 'condensed', accentVoice: 'marker', anchor: 'low' },
-  furious: { hold: 'jolt', voice: 'block', accentVoice: 'marker', anchor: 'center' },
-  weary: { hold: 'pendulum', voice: 'slab', accentVoice: 'marker', anchor: 'low' },
-  grieving: { hold: 'still', voice: 'serif', accentVoice: 'condensed', anchor: 'center' },
-  brooding: { hold: 'pendulum', voice: 'serif', accentVoice: 'marker', anchor: 'low' },
-  hollow: { hold: 'still', voice: 'mono', accentVoice: 'condensed', anchor: 'upperLeft' },
-}
-
-/** The four background axes a mood maps onto (all 0..1). */
-export interface MoodAxes {
-  /** Calm to intense. */
-  arousal: number
-  /** Dark and heavy to bright and uplifting. */
-  valence: number
-  /** Smooth to harsh or chaotic. */
-  tension: number
-  /** Cool to warm. */
-  warmth: number
-}
-
-export const NEUTRAL_AXES: MoodAxes = { arousal: 0.5, valence: 0.5, tension: 0.5, warmth: 0.5 }
-
-const MOOD_AXES: Record<string, MoodAxes> = {
-  calm: { arousal: 0.2, valence: 0.6, tension: 0.2, warmth: 0.5 },
-  mournful: { arousal: 0.25, valence: 0.3, tension: 0.3, warmth: 0.35 },
-  suspended: { arousal: 0.3, valence: 0.5, tension: 0.35, warmth: 0.4 },
-  tense: { arousal: 0.6, valence: 0.35, tension: 0.75, warmth: 0.45 },
-  menacing: { arousal: 0.7, valence: 0.2, tension: 0.8, warmth: 0.55 },
-  furious: { arousal: 0.95, valence: 0.15, tension: 0.9, warmth: 0.75 },
-  weary: { arousal: 0.35, valence: 0.35, tension: 0.4, warmth: 0.5 },
-  grieving: { arousal: 0.3, valence: 0.2, tension: 0.45, warmth: 0.35 },
-  brooding: { arousal: 0.45, valence: 0.25, tension: 0.55, warmth: 0.45 },
-  hollow: { arousal: 0.3, valence: 0.3, tension: 0.5, warmth: 0.3 },
-}
-
-/** Unknown mood words are neutral. */
-export function moodAxes(mood: string | null): MoodAxes {
-  return (mood && MOOD_AXES[mood.toLowerCase()]) || NEUTRAL_AXES
 }
 
 /** Calm at the left, violent at the right; energy indexes into it. */
@@ -219,8 +195,13 @@ const DEFAULT_EXIT: Record<HoldName, ExitName> = {
 
 /**
  * The section's base motion: one entrance, hold, exit, voice and anchor,
- * from mood and energy, fixed for the whole section. Motion changes only
- * when meaning changes — nothing here varies per line.
+ * fixed for the whole section. Motion changes only when meaning changes —
+ * nothing here varies per line.
+ *
+ * The entrance comes from energy; hold and anchor from the nearest mood
+ * anchor to the section's axes (src/axes.ts). The two voices come from
+ * the song's look when it has one — the section says which of them it is
+ * set in — and from the nearest mood anchor otherwise (version 1 and 2).
  */
 export interface SectionGrammar {
   entrance: EntranceName
@@ -231,16 +212,19 @@ export interface SectionGrammar {
   anchor: AnchorName
 }
 
-export function sectionGrammar(section: SemanticSection | null): SectionGrammar {
-  const style = section ? (MOOD_TEXT[section.mood.toLowerCase()] ?? DEFAULT_TEXT) : DEFAULT_TEXT
+export function sectionGrammar(
+  section: SemanticSection | null,
+  look: SongLook | null = null,
+): SectionGrammar {
+  const style = nearestAnchor(sectionAxes(section)).anchor
   const energy = Math.max(0, Math.min(1, section?.energy ?? 0.5))
   const entrance = ENTRANCE_LADDER[Math.round(energy * (ENTRANCE_LADDER.length - 1))]
   return {
     entrance,
     hold: style.hold,
     exit: DEFAULT_EXIT[style.hold],
-    voice: style.voice,
-    accentVoice: style.accentVoice,
+    voice: look ? look.voices[section?.voice ?? 'main'] : style.voice,
+    accentVoice: look ? look.voices.accent : style.accentVoice,
     anchor: style.anchor,
   }
 }
@@ -255,6 +239,7 @@ export function layoutForLine(emphasis: number): LayoutName {
 const NEUTRAL_FILL: Rgb = [232, 238, 248]
 const NEUTRAL_ACCENT: Rgb = [255, 180, 90]
 const NEUTRAL_TINT: Rgb = [255, 148, 64]
+const NEUTRAL_BACKGROUND: Rgb = [8, 10, 18]
 
 /** Per-line choreography: the base grammar (a refrain reuses its source
  * line's), plus the focus words and the gestures they perform. */
@@ -273,11 +258,18 @@ export function textParamsForLine(
   section: SemanticSection | null,
   emphasis: number,
   motion: LineMotion = {},
+  look: SongLook | null = null,
 ): TextParams {
-  const grammar = motion.grammar ?? sectionGrammar(section)
+  const grammar = motion.grammar ?? sectionGrammar(section, look)
   const energy = section?.energy ?? 0.5
   const palette = section?.palette.map(hexToRgb)
+  const accent = palette?.[3] ?? palette?.[1] ?? NEUTRAL_ACCENT
+  const accents: Rgb[] = [accent]
+  for (const color of (look?.palette ?? []).slice(1).map(hexToRgb)) {
+    if (!accents.some((have) => have.every((v, i) => v === color[i]))) accents.push(color)
+  }
   return {
+    // Lines at emphasis 0.85 or above switch to the accent voice.
     voice: emphasis >= TEXT.shatterEmphasis ? grammar.accentVoice : grammar.voice,
     entrance: grammar.entrance,
     hold: grammar.hold,
@@ -287,8 +279,10 @@ export function textParamsForLine(
     focus: [...(motion.focus ?? [])],
     gestures: [...(motion.gestures ?? [])],
     fill: palette?.[2] ?? NEUTRAL_FILL,
-    accent: palette?.[3] ?? palette?.[1] ?? NEUTRAL_ACCENT,
+    accent,
     tint: palette?.[1] ?? NEUTRAL_TINT,
+    background: palette?.[0] ?? NEUTRAL_BACKGROUND,
+    accents,
     forceScale: TEXT.forceBase + energy * TEXT.forceEnergy,
     sizeScale: 0.75 + emphasis * 0.5,
     scrim: Math.min(1, TEXT.scrimBase + emphasis * TEXT.scrimEmphasis),
@@ -305,7 +299,7 @@ export function paramsForSection(
   emphasis: number,
 ): SceneParams {
   if (!section) return NEUTRAL_PARAMS
-  const motion = MOODS[section.mood.toLowerCase()] ?? NEUTRAL_MOTION
+  const motion = motionForAxes(sectionAxes(section))
   const palette = section.palette.map(hexToRgb)
   return {
     key: `${section.label}@${section.start}`,
@@ -321,6 +315,6 @@ export function paramsForSection(
     jitter: motion.jitter,
     lift: motion.lift,
     accent: span(MAPPING.accentAtZero, MAPPING.accentAtFull, emphasis),
-    motif: chooseMotif(section.imagery).motif,
+    motif: motifForSection(section).motif,
   }
 }

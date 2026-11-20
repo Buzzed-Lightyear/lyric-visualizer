@@ -45,9 +45,14 @@ async function launchBrowser() {
   }
 }
 
-const server = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-  stdio: ['ignore', 'pipe', 'pipe'],
-})
+// Started as one process (node running Vite's own entry), not through npx:
+// killing an npx wrapper can leave the real server running on the port,
+// and the next run would then quietly talk to that stale one.
+const server = spawn(
+  process.execPath,
+  ['node_modules/vite/bin/vite.js', '--port', String(PORT), '--strictPort'],
+  { stdio: ['ignore', 'pipe', 'pipe'] },
+)
 let serverOutput = ''
 server.stdout.on('data', (d) => (serverOutput += d))
 server.stderr.on('data', (d) => (serverOutput += d))
@@ -95,6 +100,31 @@ try {
         `draw avg ${report.drawMs.avg}ms p99 ${report.drawMs.p99}ms · ` +
         `sheet: shots/contact-sheet.png · report: shots/report.json`,
     )
+    // Readable text, per song and per scene: the old scrim vs adaptive text.
+    if (report.readability?.length) {
+      const pct = (share) => `${(share * 100).toFixed(1)}%`.padStart(6)
+      console.log('\nreadable text: share of samples at 3:1 or better, and the median ratio')
+      for (const song of report.readability) {
+        console.log(`  ${song.slug}`)
+        console.log(`    ${'scene'.padEnd(12)} ${'old scrim'.padEnd(16)} ${'adaptive'.padEnd(16)} text   backing q/l/b/later   preset`)
+        for (const scene of song.scenes) {
+          console.log(
+            `    ${scene.label.padEnd(12)} ` +
+              `${pct(scene.before.pass)} ${scene.before.median.toFixed(1).padStart(5)}:1    ` +
+              `${pct(scene.after.pass)} ${scene.after.median.toFixed(1).padStart(5)}:1    ` +
+              `${String(scene.polarity).padEnd(6)} ${scene.strength.map((s) => s.toFixed(2)).join(' ')}   ` +
+              `${scene.preset.slice(0, 40)}${scene.frames === 'rendered' ? '  (frames rendered now)' : ''}`,
+          )
+        }
+      }
+    }
+    if (report.textDrawMs) {
+      const t = report.textDrawMs
+      console.log(
+        `\ntext layer draw, hostile background: old scrim avg ${t.scrim.avg}ms p99 ${t.scrim.p99}ms · ` +
+          `adaptive avg ${t.adaptive.avg}ms p99 ${t.adaptive.p99}ms · one background sample ${t.sampleMs}ms`,
+      )
+    }
     if (pageErrors.length > 0) {
       console.error('\npage errors:')
       for (const e of pageErrors) console.error('  -', e)
@@ -116,6 +146,12 @@ try {
     const expect = (pass, what) => {
       if (!pass) appFailures.push(what)
     }
+    // Any write to the preset feedback file during the smoke test is a failure:
+    // [ and ] only preview, and P (which does save) is never pressed here.
+    const feedbackWrites = []
+    app.on('request', (request) => {
+      if (request.url().includes('/__presetFeedback')) feedbackWrites.push(request.method())
+    })
     await app.goto(`${BASE}/?fixture=1`)
 
     // Start screen: the fixture songs are listed with their metadata.
@@ -145,8 +181,19 @@ try {
     await app.keyboard.press('Escape')
     expect(!(await app.isVisible('[data-testid="help"]')), 'help sheet closes on Escape')
 
+    // [ and ] preview a candidate and say so; nothing is saved.
+    await app.keyboard.press(']')
+    await app.waitForTimeout(150)
+    const previewToast = (await app.locator('.toast').first().textContent().catch(() => '')) ?? ''
+    expect(
+      /Previewing \d+ of \d+, not saved\. P to keep\./.test(previewToast),
+      `] shows the preview message (got "${previewToast}")`,
+    )
+    await app.keyboard.press('[')
+    await app.waitForTimeout(150)
+
     // Cycle to the canvas-scene background so there is something to sample,
-    // then exercise every key once. No [ ] or N here: those save feedback
+    // then exercise every key once. No P or N here: those save feedback
     // through the dev endpoint and a verify run must not mutate
     // src/presetFeedback.json.
     await app.keyboard.press('b')
@@ -184,6 +231,8 @@ try {
     expect(after.time < 2 && after.paused, `switching resets playback (t=${after.time.toFixed(2)}, paused=${after.paused})`)
     expect((await app.textContent('.now-title')).includes('Static Garden'), 'switching swaps the title')
     expect((await app.locator('.scrub-section').count()) === 2, 'switching swaps the section markers')
+
+    expect(feedbackWrites.length === 0, `no key in the smoke test saved preset feedback (${feedbackWrites.length} writes)`)
 
     const appPass = appFailures.length === 0 && appErrors.length === 0
     const detail = [...appFailures, ...(appErrors.length ? ['errors: ' + appErrors.join(' | ')] : [])]

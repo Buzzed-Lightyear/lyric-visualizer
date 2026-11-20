@@ -1,0 +1,65 @@
+READABLE TEXT (npm run shots): share of samples at 3:1 or better, and the median contrast ratio
+old scrim = the previous global scrim with fixed colors; adaptive = light/dark text with a per-word backing
+
+dj-mykael-v-tr-be-on-the-move
+  scene               old scrim           adaptive   text   backing quiet/loud/beat/later   preset
+  intro          21.9%    2.0:1    100.0%   10.5:1   light  0.57 0.58 0.50 0.67   martin - ghost city
+  verse 1        22.2%    2.6:1    100.0%   11.8:1   light  0.40 0.50 0.16 0.14   11
+  chorus         99.6%    9.6:1     99.5%    9.2:1   light  0.17 0.38 0.40 0.41   martin - The Bridge of Khazad-Dum
+  verse 2        48.9%    3.0:1     99.8%    8.7:1   light  0.36 0.50 0.31 0.48   flexi + fishbrain - warpcraft [random mashup
+  verse 3        99.5%    8.0:1     99.8%   11.7:1   light  0.00 0.00 0.20 0.01   martin - angel flight
+
+kanye-west-black-skinhead
+  scene               old scrim           adaptive   text   backing quiet/loud/beat/later   preset
+  intro           3.0%    2.0:1    100.0%   16.9:1   light  0.66 0.66 0.66 0.66   flexi + amandio c - organic12-3d-2.milk
+  verse 1        50.0%    3.0:1    100.0%    9.9:1   light  0.11 0.17 0.24 0.14   Flexi - blame hexcollie twice
+  chorus         48.4%    2.8:1     97.7%    5.4:1   light  0.00 0.59 0.56 0.61   amandio c - salty beats - spiral
+  bridge         49.3%    2.3:1    100.0%   12.2:1   light  0.66 0.03 0.03 0.40   flexi - meta4free
+  verse 2        37.7%    2.5:1    100.0%   16.6:1   light  0.56 0.56 0.56 0.56   AdamFx 2 Geiss -Somewhat Distort Me 3_1
+  outro          88.4%    4.4:1    100.0%    8.3:1   light  0.00 0.00 0.00 0.00   Cope - The Neverending Explosion of Red Liqu
+
+kendrick-lamar-xxx-feat-u2
+  scene               old scrim           adaptive   text   backing quiet/loud/beat/later   preset
+  intro          99.6%   13.2:1     99.2%   13.3:1   light  0.00 0.00 0.00 0.00   Zylot - In death there is life (Geiss Layere
+  verse 1        82.9%    5.6:1     98.8%    7.5:1   light  0.44 0.57 0.57 0.51   Flexi - wild at range
+  hook           99.5%    5.3:1    100.0%    5.1:1   light  0.28 0.40 0.37 0.48   Geiss - Reaction Diffusion 3 (Lichen Mix)
+  verse 2       100.0%   10.2:1     98.9%    5.2:1   light  0.00 0.00 0.00 0.00   martin - city of shadows
+  verse 3        82.7%    5.0:1     99.3%    6.0:1   light  0.69 0.70 0.70 0.70   Martin - cool morning
+  climax         91.1%    6.4:1     99.5%    6.5:1   light  0.38 0.49 0.52 0.10   TonyMilkdrop - Magellan's Nebula [Flexi - yo
+  aside          94.5%    8.1:1    100.0%    7.5:1   light  0.27 0.23 0.19 0.28   suksma - heretical crosscut playpen
+  transition     91.9%    7.5:1     96.4%    4.2:1   light  0.00 0.50 0.22 0.01   Rovastar & Loadus + Zylot - FractalDrop (Spa
+  chorus         99.6%   12.7:1     96.9%    8.0:1   light  0.00 0.00 0.00 0.00   Flexi + Martin - tunnel of supraschismatika
+  verse 4        82.0%    7.1:1     99.2%    5.4:1   light  0.30 0.26 0.13 0.04   Studio Music and Unchained - Rapid Alteratio
+
+ski-mask-the-slump-god-catch-me-outside-2
+  scene               old scrim           adaptive   text   backing quiet/loud/beat/later   preset
+  intro          87.4%    4.6:1    100.0%   11.7:1   light  0.00 0.03 0.64 0.45   444
+  verse 1        37.2%    2.8:1    100.0%   12.1:1   light  0.00 0.62 0.56 0.32   _Mig_028
+  chorus         10.6%    2.1:1    100.0%    6.6:1   dark   0.33 0.35 0.37 0.36   Hexcollie - Nautalisk - mash0000 - but offic
+  verse 2        54.3%    3.2:1    100.0%    8.4:1   dark   0.58 0.58 0.58 0.58   LuxXx - iWhat Happened Right After I Ate Tha
+  outro          88.1%    4.6:1    100.0%   11.7:1   light  0.00 0.62 0.03 0.36   _Krash + Eo.S. - Photographic Sentinel
+
+tame-impala-dracula-with-jennie
+  scene               old scrim           adaptive   text   backing quiet/loud/beat/later   preset
+  intro          26.9%    1.7:1     98.6%    6.2:1   light  0.02 0.63 0.64 0.54   fiShbRaiN - a quiet death
+  verse 1        66.5%    8.7:1     99.1%    7.0:1   light  0.00 0.00 0.00 0.00   158
+  pre-chorus     40.4%    2.7:1     99.9%    6.2:1   light  0.57 0.51 0.56 0.34   _Flexi, martin + geiss - painterly rogue wav
+  verse 2        62.1%    6.4:1     99.4%    7.9:1   light  0.57 0.67 0.61 0.54   martin - violet flash
+  chorus         45.4%    2.7:1     99.5%    5.7:1   light  0.00 0.38 0.38 0.38   Flexi - mindblob 2.0
+  verse 3        96.1%    6.0:1    100.0%    8.7:1   light  0.38 0.58 0.46 0.50   flexi + fishbrain - neon mindblob grafitti
+  bridge         49.5%    3.0:1    100.0%    5.9:1   dark   0.27 0.17 0.05 0.14   martin - castle in the air
+  outro          64.6%    5.8:1     98.5%    5.4:1   light  0.00 0.12 0.28 0.57   Flexi - piercing
+
+tame-impala-loser
+  scene               old scrim           adaptive   text   backing quiet/loud/beat/later   preset
+  intro          78.0%    7.4:1    100.0%    9.2:1   light  0.65 0.60 0.65 0.66   martin - sunset over the river
+  verse 1        95.8%    4.2:1    100.0%    6.3:1   dark   0.13 0.15 0.16 0.15   fiShbRaiN + Flexi - witchcraft 2.0
+  chorus         22.7%    2.2:1    100.0%   11.5:1   dark   0.50 0.03 0.44 0.46   suksma - nip tuck
+  verse 2       100.0%    8.9:1    100.0%    8.3:1   light  0.00 0.00 0.31 0.01   beta106i - Potion of Ink
+  bridge         95.0%   13.8:1     99.0%   15.0:1   light  0.00 0.25 0.42 0.67   Krash + Illusion - Spiral Movement
+  verse 3       100.0%    7.8:1    100.0%    6.4:1   light  0.09 0.20 0.05 0.17   amandio c - flashy thing
+  outro          92.8%    6.1:1    100.0%    6.6:1   dark   0.00 0.12 0.28 0.49   _Geiss - Brain Zoom 3 (Color Emboss Mix)
+
+scenes at 95% or better: old scrim 10 of 41, adaptive 41 of 41
+lowest scene: old scrim 3.0%, adaptive 96.4%
+text layer draw over a hostile background: old scrim avg 1.902ms p99 2.7ms; adaptive avg 4.878ms p99 7.5ms; one background sample 3.6ms (taken every 4th frame)

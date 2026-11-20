@@ -8,55 +8,19 @@
 import butterchurnModule from 'butterchurn'
 import { unwrapButterchurn } from './background'
 import { loadAllPresets } from './presetPacks'
+import {
+  audioLevels,
+  STRIP_DT as DT,
+  STRIP_END,
+  STRIP_FPS as FPS,
+  STRIP_H as RH,
+  STRIP_W as RW,
+} from './stripTrack'
 
 const butterchurn = unwrapButterchurn(butterchurnModule)
 
-const RW = 320
-const RH = 180
 const GW = 160
 const GH = 90
-const FPS = 30
-const DT = 1 / FPS
-const SR = 44100
-
-/**
- * The scripted test track: warm-up (loud) to 2 s, QUIET 2..3.2 s, LOUD
- * 3.2..5.4 s, steady BEATS at 5.5/6.0/6.5/7.0 s, loud tail to 8.6 s.
- */
-function trackAmp(t: number): number {
-  return t >= 2 && t < 3.2 ? 0.12 : 0.9
-}
-
-function beatEnv(t: number): number {
-  if (t < 5.4 || t >= 7.4) return 0
-  const phase = (t - 5.5 + 10) % 0.5
-  return Math.exp(-phase * 10)
-}
-
-function audioLevels(t: number): {
-  timeByteArray: Uint8Array
-  timeByteArrayL: Uint8Array
-  timeByteArrayR: Uint8Array
-} {
-  const N = 1024
-  const timeByteArray = new Uint8Array(N)
-  const timeByteArrayL = new Uint8Array(N)
-  const timeByteArrayR = new Uint8Array(N)
-  const amp = trackAmp(t)
-  const kick = beatEnv(t)
-  for (let i = 0; i < N; i++) {
-    const ts = t + i / SR
-    const bass = Math.sin(2 * Math.PI * 55 * ts) * (0.55 + kick * 1.4)
-    const mid = Math.sin(2 * Math.PI * 440 * ts + Math.sin(ts * 3) * 2) * 0.32
-    const high =
-      (Math.sin(2 * Math.PI * 3203 * ts) + Math.sin(2 * Math.PI * 5277 * ts)) * 0.11
-    const clamp = (v: number) => Math.max(-1, Math.min(1, v))
-    timeByteArray[i] = Math.round(128 + clamp((bass + mid + high) * amp) * 100)
-    timeByteArrayL[i] = Math.round(128 + clamp((bass + mid * 1.2) * amp) * 100)
-    timeByteArrayR[i] = Math.round(128 + clamp((bass * 0.8 + mid + high * 1.5) * amp) * 100)
-  }
-  return { timeByteArray, timeByteArrayL, timeByteArrayR }
-}
 
 // --- pixel helpers -----------------------------------------------------------
 
@@ -214,7 +178,7 @@ async function capture(
     const costs: number[] = []
     let nextStrip = 0
 
-    const frames = Math.round(8.6 * FPS)
+    const frames = Math.round(STRIP_END * FPS)
     for (let i = 0; i < frames; i++) {
       const t = i * DT
       const start = performance.now()

@@ -55,21 +55,37 @@ async function waitForServer(url, timeoutMs = 30000) {
   throw new Error(`dev server did not come up at ${url}`)
 }
 
+const LAUNCH_ARGS = ['--autoplay-policy=no-user-gesture-required']
+
+/** Playwright's bundled Chromium; installed Chrome when that one is missing. */
+async function launchBrowser() {
+  try {
+    return await chromium.launch({ args: LAUNCH_ARGS })
+  } catch {
+    return await chromium.launch({ channel: 'chrome', args: LAUNCH_ARGS })
+  }
+}
+
 fs.mkdirSync(OUT, { recursive: true })
 const store = fs.existsSync(MEASUREMENTS)
   ? JSON.parse(fs.readFileSync(MEASUREMENTS, 'utf8'))
   : {}
 const takenSlugs = new Set(Object.values(store).map((entry) => entry.slug))
 
-const server = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-  stdio: 'ignore',
-})
+// Started as one process (node running Vite's own entry), not through npx:
+// killing an npx wrapper can leave the real server running on the port,
+// and the next run would then quietly talk to that stale one.
+const server = spawn(
+  process.execPath,
+  ['node_modules/vite/bin/vite.js', '--port', String(PORT), '--strictPort'],
+  { stdio: 'ignore' },
+)
 
 let browser
 let exitCode = 0
 try {
   await waitForServer(`${BASE}/catalog.html`)
-  browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] })
+  browser = await launchBrowser()
 
   const makePage = async () => {
     const page = await browser.newPage({ viewport: { width: 500, height: 300 } })
