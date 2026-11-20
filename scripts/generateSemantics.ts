@@ -17,6 +17,7 @@ import {
   SemanticsOutputSchema,
   stripNulls,
   type ExtractionInput,
+  type SemanticsOutput,
 } from '../src/semanticsGen'
 import { parseSemantics } from '../src/semantics'
 
@@ -40,6 +41,39 @@ export function extractionInput(
         words: line.text.split(/\s+/).filter(Boolean),
       })),
   }
+}
+
+/** Extract and schema-validate the model's structured output. */
+function parseOutput(response: Anthropic.Message): {
+  output: SemanticsOutput | null
+  errors: string[]
+} {
+  if (response.stop_reason === 'refusal') {
+    return { output: null, errors: ['the model declined this request (stop: refusal)'] }
+  }
+  if (response.stop_reason === 'max_tokens') {
+    return { output: null, errors: ['the output was cut off at max_tokens'] }
+  }
+  const text = response.content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map((block) => block.text)
+    .join('')
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return { output: null, errors: ['the output was not valid JSON'] }
+  }
+  const checked = SemanticsOutputSchema.safeParse(raw)
+  if (!checked.success) {
+    return {
+      output: null,
+      errors: checked.error.issues.map(
+        (issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`,
+      ),
+    }
+  }
+  return { output: checked.data, errors: [] }
 }
 
 export interface GenerateResult {
@@ -66,16 +100,22 @@ export async function generateSemantics(
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     log(`  asking ${model} (attempt ${attempt} of 3)...`)
-    const response = await client.messages.parse({
-      model,
-      max_tokens: 32000,
-      output_config: { format: zodOutputFormat(SemanticsOutputSchema), effort: 'high' },
-      messages: [{ role: 'user', content: prompt }],
-    })
-    if (!response.parsed_output) {
-      lastErrors = [`the model's output did not match the schema (stop: ${response.stop_reason})`]
+    // Streamed: the SDK refuses non-streaming requests this large (long
+    // requests risk dropped idle connections). finalMessage() hands back
+    // the same Message a plain create() would.
+    const response = await client.messages
+      .stream({
+        model,
+        max_tokens: 32000,
+        output_config: { format: zodOutputFormat(SemanticsOutputSchema), effort: 'high' },
+        messages: [{ role: 'user', content: prompt }],
+      })
+      .finalMessage()
+    const parsed = parseOutput(response)
+    if (!parsed.output) {
+      lastErrors = parsed.errors
     } else {
-      const doc = stripNulls(response.parsed_output)
+      const doc = stripNulls(parsed.output)
       const { semantics, errors } = parseSemantics(doc)
       if (semantics) {
         const problems = automaticChecks(semantics, lrcLines, input.durationSec)

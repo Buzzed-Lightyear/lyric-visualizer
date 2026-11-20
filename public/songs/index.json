@@ -2,6 +2,27 @@
   "version": 1,
   "songs": [
     {
+      "slug": "kanye-west-black-skinhead",
+      "base": "/songs/kanye-west-black-skinhead/",
+      "title": "Black Skinhead",
+      "artist": "Kanye West",
+      "album": "Yeezus",
+      "duration": 188,
+      "audio": "audio.mp3",
+      "semantics": "api",
+      "colors": [
+        "#8b0000",
+        "#b30000",
+        "#c1121f",
+        "#ff2a00",
+        "#c1121f",
+        "#8a0f0f",
+        "#c1121f",
+        "#ff2a00",
+        "#ffffff"
+      ]
+    },
+    {
       "slug": "kendrick-lamar-xxx-feat-u2",
       "base": "/songs/kendrick-lamar-xxx-feat-u2/",
       "title": "XXX. FEAT. U2.",
