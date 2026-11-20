@@ -43,8 +43,8 @@ One folder per song under `public/songs/<slug>/`:
 
 - `audio.mp3` (or `.wav`, ...): the audio — gitignored
 - `lyrics.lrc`: line-timed lyrics for that exact recording — gitignored
-- `semantics.json`: the semantics (committed; no lyric text, words go by
-  index)
+- `semantics.json`: the semantics and the song's look (committed; no
+  lyric text, words go by index)
 - `meta.json`: title, artist, album, duration, audio file name, and
   where the semantics came from (`api` / `agent` / `neutral`) — committed
 - `words.json`: real word onsets from LRCLIB's word-synced lyrics, when
@@ -77,30 +77,62 @@ npm run add-song -- --song <slug> --lyrics            # refetch LRCLIB
 npm run add-song -- --song <slug> --lyrics my.lrc     # use a local file
 npm run add-song -- --song <slug> --semantics         # regenerate
 npm run add-song -- --song <slug> --semantics --side  # to semantics.api.json + diff
+npm run add-song -- --song <slug> --look              # rewrite only the look
 ```
 
 `--side` writes next to the real file (gitignored), leaves
 `semantics.json` untouched, and prints a diff: section boundaries side
 by side, focus-word overlap, gesture agreement.
 
+`--look` needs no lyrics and leaves sections and lines alone. On a file
+without a look (or with a partial one) the model writes the
+description, palette and voices from the title, the artist and the
+existing sections, and the look is marked `"partial": true`; on a file
+with a full look it keeps the words. Either way the scenes are chosen
+again. To turn a partial look into a full version 3 file, regenerate
+with the lyrics: `npm run add-song -- --song <slug> --lyrics --semantics`.
+
 ### Semantics from the API
 
-`scripts/generateSemantics.ts` (Anthropic TypeScript SDK) asks the model
-for the version 2 semantics file using schema-constrained output
-(structured outputs + a Zod schema in `src/semanticsGen.ts`, where the
-prompt also lives). The key comes from `ANTHROPIC_API_KEY` in `.env`
-(gitignored; the SDK code is never imported by anything in the browser
-bundle). `SEMANTICS_MODEL` overrides the default model
-(`claude-opus-5-5`). Output is validated with the same parser the app
-uses and retried up to twice with the errors quoted back; the final
-document must pass the automatic checks in `src/semanticsChecks.ts`
-(sections cover the song, focus indices in range, gesture share between
-15% and 40%, same-label sections identical, refrain gestures
-consistent) or nothing is written.
+Two calls (Anthropic TypeScript SDK, `scripts/generateSemantics.ts`;
+the prompts, schemas, retries and checks are pure code in
+`src/semanticsGen.ts` and `src/lookGen.ts`, tested against a mocked
+model). The key comes from `ANTHROPIC_API_KEY` in `.env` (gitignored;
+the SDK code is never imported by anything in the browser bundle).
+`SEMANTICS_MODEL` overrides the default model (`claude-opus-5-5`).
 
-Without a key, add-song writes a **neutral fallback** instead — sections
-from the gaps in the LRC, neutral mood, no authored gestures (the
-lexicon still fires at runtime) — and says so.
+1. **The semantics and the look.** The model reads the whole song and
+   writes the version 3 file: the song-level look (a 1-3 sentence
+   description in its own words, a palette, two of the eight type
+   voices), the sections (free mood words, the four axes as numbers,
+   energy, a palette within the song's, free imagery tags, a one-line
+   scene, which voice) and the lines. The prompt offers no list of
+   moods or imagery; the only closed lists are things the renderer can
+   physically do (voices, gestures, directions). Output is
+   schema-constrained, validated with the same parser the app uses and
+   retried up to twice with the errors quoted back; the final document
+   must pass the automatic checks in `src/semanticsChecks.ts` (sections
+   cover the song, focus indices in range, gesture share between 15% and
+   40%, same-label sections identical, refrain gestures consistent, no
+   free-text field repeating four or more words in a row of a lyric
+   line) or nothing is written.
+2. **The model chooses the scenes.** With the look written, the model is
+   shown every preset that may play (name, description, axes, imagery,
+   colors), the song's sections, and the looks and preset sets of the
+   songs already in the library, and chooses one preset per section
+   label as one cohesive set for this song — and is asked to give the
+   song its own identity next to the others. That is a request to the
+   model; no code scores, penalizes or spreads presets. Code keeps
+   guardrails only: names must exist; nothing banned, broken, blank or
+   hard-strobing; no preset for two different labels. An invalid set is
+   retried twice with the problems quoted back; if it is still invalid
+   (or the call fails) the scorer picks instead and the file records it
+   (`look.presetsFrom: "scorer"`).
+
+Without a key, add-song writes a **neutral fallback** instead — a
+version 2 file with sections from the gaps in the LRC, neutral mood, no
+look and no authored gestures (the lexicon still fires at runtime; the
+scorer picks the presets) — and says so.
 
 ## Keys
 
@@ -221,9 +253,23 @@ estimated pace is at or under 3 words/s with every word readable for
 Motion changes only when meaning changes:
 
 - **Section grammar**: each section has one base entrance (from energy,
-  calm to violent on the ladder), hold + voice + anchor (from mood) and
-  exit (the hold's natural one), fixed for the whole section. Nothing
+  calm to violent on the ladder), a hold and an anchor (from the
+  section's axes: the nearest mood anchor, see below), an exit (the
+  hold's natural one) and a voice, fixed for the whole section. Nothing
   varies per line for variety's sake.
+- **Voices**: a song's two voices, main and accent, come from its look;
+  each section says which one it is set in. Files without a look
+  (versions 1 and 2) take both from the mood anchor, as before.
+- **Axes, with the old moods as anchors** (`src/axes.ts`): motion and
+  type are driven by the four axes (arousal, valence, tension, warmth),
+  not by a mood word. The ten version 2 mood words (and "neutral")
+  remain as anchor points in that space, each holding the hold, anchor,
+  voices, jitter and lift it used to select. A version 3 section is
+  placed by its own axes; a version 1 or 2 section sits exactly on its
+  mood word's anchor, so old files map to exactly the result they always
+  had. Jitter and lift blend between anchors by inverse distance (exact
+  on an anchor, continuous everywhere); hold, anchor and the fallback
+  voices come from the nearest anchor.
 - **Refrains**: a line whose words repeat an earlier line (exact, a
   shorter reprise, or cut off mid-word with `-`) reuses that line's
   choreography exactly — grammar, focus and gesture — wherever it sits
@@ -287,28 +333,76 @@ repeat across all batches; a batch whose controls stray is rerun.
 `scripts/mergeCatalog.mjs` validates and merges everything into the
 committed `src/presetCatalog.json`.
 
-Picking: each mood maps to the same four axes; every usable preset is
-scored per section (axes closeness, energy vs arousal and motion,
-palette vs dominant colors, imagery overlap through synonyms,
-readability, quality — weights in `tuning.ts` PRESET_SCORE). Banned,
-broken, blank and hard-strobing presets never play; same-label sections
-share one preset; neighbouring sections never share; same inputs give
-the same picks. Your [ ] / N feedback persists to
-`src/presetFeedback.json` through a dev-only Vite endpoint (reset
-button in the K panel). Choices are stored per song (keyed by slug);
-bans apply everywhere.
+Picking, per section label, in this order:
+
+1. **Your saved choice** ([ ] in the player), if it can still play.
+2. **The look's preset** (`look.presets` in a version 3 file): the set
+   the model chose for this song in add-song.
+3. **The scorer**: every usable preset is scored per section (axes
+   closeness, energy vs arousal and motion, palette vs dominant colors,
+   imagery overlap through synonyms, readability, quality — weights in
+   `tuning.ts` PRESET_SCORE). It is the fallback for files without a
+   look and for a look preset that cannot play, and the source of the
+   [ ] candidate list after the look's pick.
+
+Guardrails, whoever decides: banned, broken, blank and hard-strobing
+presets never play; same-label sections share one preset; automatic
+picks never repeat on neighbouring sections; same inputs give the same
+picks. Your [ ] / N feedback persists to `src/presetFeedback.json`
+through a dev-only Vite endpoint (reset button in the K panel). Choices
+are stored per song (keyed by slug); bans apply everywhere. The debug
+overlay marks a pick `(saved)` or `(look)`.
+
+## Does each song have its own look?
+
+```sh
+npm run look-report                      # before = the scorer alone
+npm run look-report -- --before <ref>    # before = the library at a commit
+npm run look-sheets                      # review/<slug>.jpg
+```
+
+`look-report` measures; nothing in it feeds back into picking. For the
+library it prints the distinct presets per song, the presets every pair
+of songs shares, how many distinct mood and imagery terms are in use,
+each song's voices and palette, and the measured text readability of
+the picked presets (the scorer weighs it; the model is not shown it) —
+before and after. "Before" is the
+library dressed by the scorer alone (looks ignored, voices from the mood
+anchors: what every song got up to version 2), or, with `--before`, the
+song files as they were at that commit. Saved choices are reported
+separately, as overrides. `--out <file>` also writes the text.
+
+`look-sheets` writes one contact sheet per song under `review/`: the
+look description, the palette swatches, the two voices set in their own
+faces (the title in main, the artist in accent), and for each section
+label the 4-frame strip of its preset with the section's mood, axes,
+imagery and scene. A saved choice that overrides the look is shown under
+it. The strips come from `npm run catalog`; the sheets carry no lyric
+text.
 
 ## Semantics file format
 
 ```json
 {
-  "version": 2,
+  "version": 3,
+  "look": {
+    "description": "A slow amber evening that never quite turns to night.",
+    "palette": ["#1a1206", "#e0a040", "#f4e2b8", "#7a3b1e"],
+    "voices": { "main": "serif", "accent": "marker" },
+    "presets": { "verse": "<preset name>", "hook": "<preset name>" },
+    "presetsFrom": "model",
+    "source": "api"
+  },
   "sections": [
     {
       "start": 42.08, "end": 59.59,
-      "label": "hook", "energy": 0.8, "mood": "menacing",
-      "palette": ["#120a0d", "#e03535", "#ffb199", "#ff8a5c"],
-      "imagery": ["embers", "gunmetal", "sirens"]
+      "label": "hook", "energy": 0.8,
+      "mood": "sun-drunk, restless",
+      "axes": { "arousal": 0.7, "valence": 0.6, "tension": 0.5, "warmth": 0.8 },
+      "palette": ["#1a1206", "#e0a040", "#f4e2b8"],
+      "imagery": ["paper lanterns", "warm dust"],
+      "scene": "Lanterns sway over an empty courtyard at dusk.",
+      "voice": "main"
     }
   ],
   "lines": [
@@ -318,22 +412,50 @@ bans apply everywhere.
 }
 ```
 
+- `look` (version 3, one per song):
+  - `description`: 1-3 sentences in the model's own words (at most 400
+    characters).
+  - `palette`: 3-6 hex colors for the whole song; section palettes vary
+    within it.
+  - `voices`: `main` and `accent`, two different voices out of block,
+    air, condensed, serif, whisper, mono, marker, slab.
+  - `presets`: the chosen background preset per section label.
+    `presetsFrom` says who chose them (`model`, or `scorer` after the
+    model's set failed the guardrails); `source` says who wrote the look
+    (`api` / `agent`).
+  - `partial: true` marks a look that was added to an older file without
+    its lyrics: the sections are still version 2 shaped (no axes, scene
+    or voice of their own; motion still follows their mood word).
 - `start`/`end` in seconds; sections must not overlap.
 - `energy` 0..1 scales baseline intensity (particle count, speed, glow).
-- `mood` is one short word mapped to motion character (smooth vs jittery,
-  rising vs sinking); unknown moods fall back to neutral.
+- `mood`: version 3, a few free words (at most 48 characters) — any
+  words work, because the renderer reads the axes. Versions 1 and 2, one
+  short word: the ten known words sit on their anchors, anything else is
+  neutral.
+- `axes` (version 3): arousal (calm to intense), valence (dark and heavy
+  to bright and uplifting), tension (smooth to harsh), warmth (cool to
+  warm), each 0..1 — the same scale the preset catalog is tagged on.
+  They drive the hold, the anchor, jitter and lift (`src/axes.ts`) and
+  the scorer.
 - `palette` is 3-5 hex colors: background, glow, particles, accent ring.
-- `imagery` tags pick the motif; the first tag with a mapping wins, and
-  unknown tags fall through to haze. Motifs: **embers** (rise from the
-  bottom, flicker, cool as they climb, heat glow along the bottom),
-  **rain** (long angled streaks in depth layers, dim glow high up),
-  **stars** (fixed field with slow parallax, twinkle from high, soft
-  horizon glow), **haze** (large drifting blobs and blurred bokeh
-  lights; smoke, city-night, streetlights, fluorescent land here), and
-  **drift** (the step 2 look, used only for neutral).
+- `imagery`: version 3, up to 6 free tags (at most 32 characters each).
+  For the canvas scene the first tag with a motif wins, matched as a
+  whole tag or (version 3 only) by its words; unknown tags fall through
+  to haze. Motifs: **embers** (rise from the bottom, flicker, cool as
+  they climb, heat glow along the bottom), **rain** (long angled streaks
+  in depth layers, dim glow high up), **stars** (fixed field with slow
+  parallax, twinkle from high, soft horizon glow), **haze** (large
+  drifting blobs and blurred bokeh lights; smoke, city-night,
+  streetlights, fluorescent land here), and **drift** (the step 2 look,
+  used only for neutral).
+- `scene` (version 3): one line describing the section's scene (at most
+  160 characters).
+- `voice` (version 3): `main` or `accent` — which of the look's two
+  voices the section is set in. Lines at emphasis 0.85 or above use the
+  accent voice.
 - `lines` map an LRC start time to emphasis 0..1: how hard beat accents
   land during that line. Unlisted lines default to 0.5.
-- Version 2 adds optional per-line directions; the file still contains
+- Per-line directions (version 2 and up); the file still contains
   **no lyric text** — words go by 0-based index:
   - `focus`: 1-2 distinct indices of the words that carry the line
     (set larger and heavier; they perform the gesture).
@@ -342,13 +464,16 @@ bans apply everywhere.
     `focus`).
   - `direction`: left / right / up / down, a spatial hint for sided
     gestures (needs `gesture`).
-  - Unknown line fields are rejected so lyric text can never slip in;
-    focus indices are range-checked against the loaded lyrics at
-    runtime (console errors, `validateFocusRanges`).
+  - Unknown line fields are rejected so lyric text can never slip in
+    (in version 3 so are unknown section and look fields, and the free
+    text is length-limited); focus indices are range-checked against the
+    loaded lyrics at runtime (console errors, `validateFocusRanges`).
 
 The file is validated on load; problems are listed in the console and the
-scene runs neutral. Version 1 files (no `version`, no line extras) still
-parse.
+scene runs neutral. **Version 1 and 2 files still parse and render
+exactly as before**: they have no look, the version 3 section fields are
+never read from them, their presets come from the scorer and their
+voices from the mood word.
 
 ## Status
 
@@ -370,6 +495,12 @@ parse.
 - **Step 4, LLM extraction: built** (`npm run add-song -- --song <slug>
   --semantics --side` regenerates to a side file and prints the diff
   against the hand-written annotation).
+- **Semantics version 3: built.** Each song gets its own look from the
+  model: free mood and imagery, axes as numbers, a song-level look with
+  its two voices, and the model's choice of presets as one set per song
+  (`npm run look-report`, `npm run look-sheets`). The six library songs
+  currently carry **partial** looks (written without lyrics); one
+  command each regenerates them in full.
 - **Songs pass: done.** A real library (one folder per song), add-song
   with LRCLIB lyrics + word timing, a start screen, and a proper
   transport replacing the native audio controls.
@@ -380,5 +511,6 @@ for the spectrum math on plain arrays), mapping (`src/mapping.ts`) and
 rendering (`src/scene.ts` orchestrating the motif renderers in
 `src/motifs.ts`) are separate: the renderer sees only
 `(AudioFrame, SceneParams, dt)`. The semantic schema and its validation
-live in `src/semantics.ts`. All tuning constants live in `src/tuning.ts`;
+live in `src/semantics.ts`; the axes and their mood anchors in
+`src/axes.ts`. All tuning constants live in `src/tuning.ts`;
 verify thresholds in `src/thresholds.ts`.

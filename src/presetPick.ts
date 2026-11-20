@@ -1,15 +1,25 @@
 /**
- * Semantic preset picking: scores every usable catalog preset against a
- * section (mood axes, energy, palette, imagery, readability, quality)
- * and assigns one per section label. Rules: banned, broken, blank and
- * hard-strobing presets never play; sections with the same label share
- * one preset; neighbouring sections never share one; same inputs give
- * the same picks. Replaces the old title-based guesses.
+ * Background preset picking, one preset per section label.
+ *
+ * Who decides, in order: the owner's saved choice (] [), then the song's
+ * look (semantics version 3: the model chose one cohesive set for the
+ * song, look.presets), then the scorer. The scorer rates every usable
+ * catalog preset against a section (mood axes, energy, palette, imagery,
+ * readability, quality); it is the fallback when a song has no look or a
+ * look's preset cannot play, and it supplies the candidates the ] [ keys
+ * cycle through after the look's pick.
+ *
+ * Guardrails, whoever decides: banned, broken, blank and hard-strobing
+ * presets never play; sections with the same label share one preset;
+ * automatic picks never repeat on neighbouring sections; same inputs
+ * give the same picks. A set the model proposes must also give every
+ * label its own preset (presetSetProblems).
  */
 
-import { moodAxes, type MoodAxes, type Rgb } from './mapping'
+import { sectionAxes, type MoodAxes } from './axes'
+import type { Rgb } from './mapping'
 import catalogJson from './presetCatalog.json'
-import type { SemanticSection } from './semantics'
+import type { SemanticSection, SongLook } from './semantics'
 import { PRESET_SCORE } from './tuning'
 
 export interface CatalogEntry {
@@ -97,6 +107,60 @@ export function isUsable(
   return !feedback.banned.includes(name)
 }
 
+/** Every preset that may play, in name order. */
+export function usablePresetNames(
+  feedback: Feedback,
+  catalog: Record<string, CatalogEntry> = CATALOG,
+): string[] {
+  return Object.keys(catalog)
+    .sort()
+    .filter((name) => isUsable(name, feedback, catalog))
+}
+
+/**
+ * The guardrails on a preset set proposed for a song (by the model in
+ * add-song, or by hand): every label has a preset; every name exists;
+ * nothing banned, broken, blank or hard-strobing; no preset serves two
+ * different labels. Returns one readable message per problem.
+ */
+export function presetSetProblems(
+  presets: Readonly<Record<string, string>>,
+  labels: readonly string[],
+  feedback: Feedback,
+  catalog: Record<string, CatalogEntry> = CATALOG,
+): string[] {
+  const problems: string[] = []
+  const wanted = [...new Set(labels)]
+  for (const label of wanted) {
+    if (!Object.hasOwn(presets, label)) problems.push(`no preset chosen for "${label}"`)
+  }
+  const usedBy = new Map<string, string>()
+  for (const [label, name] of Object.entries(presets)) {
+    if (!wanted.includes(label)) {
+      problems.push(`"${label}" is not a section label of this song`)
+      continue
+    }
+    const entry = Object.hasOwn(catalog, name) ? catalog[name] : undefined
+    if (!entry) {
+      problems.push(`"${name}" (for "${label}") is not a preset in the list; copy names exactly`)
+      continue
+    }
+    const fatal = entry.flags.filter((flag) => FATAL_FLAGS.has(flag))
+    if (fatal.length > 0) {
+      problems.push(`"${name}" (for "${label}") is flagged ${fatal.join(', ')} and never plays`)
+    } else if (feedback.banned.includes(name)) {
+      problems.push(`"${name}" (for "${label}") is banned by the owner`)
+    }
+    const other = usedBy.get(name)
+    if (other !== undefined) {
+      problems.push(`"${name}" is chosen for both "${other}" and "${label}"; each label needs its own preset`)
+    } else {
+      usedBy.set(name, label)
+    }
+  }
+  return problems
+}
+
 /** Section imagery vocabulary -> catalog tag vocabulary. */
 const IMAGERY_SYNONYMS: Record<string, string[]> = {
   'night-sky': ['space', 'stars', 'nebula'],
@@ -126,6 +190,36 @@ export interface ScoreTarget {
   energy: number
   palette: Rgb[]
   imagery: string[]
+  /** Version 3 sections: the tags are free text and also match by word. */
+  freeText?: boolean
+}
+
+/**
+ * The catalog tags a section's imagery asks for. A known tag goes
+ * through the synonym table; a free-text tag (version 3) that the table
+ * does not know is also tried word by word, plural or not.
+ */
+function wantedTags(imagery: readonly string[], freeText: boolean): Set<string> {
+  const wanted = new Set<string>()
+  for (const raw of imagery) {
+    const tag = raw.toLowerCase()
+    if (Object.hasOwn(IMAGERY_SYNONYMS, tag) || !freeText) {
+      for (const mapped of IMAGERY_SYNONYMS[tag] ?? [tag]) wanted.add(mapped)
+      continue
+    }
+    wanted.add(tag)
+    for (const word of tag.split(/[^a-z]+/)) {
+      if (word === '') continue
+      for (const form of new Set([word, `${word}s`, word.replace(/s$/, '')])) {
+        if (Object.hasOwn(IMAGERY_SYNONYMS, form)) {
+          for (const mapped of IMAGERY_SYNONYMS[form]) wanted.add(mapped)
+        } else {
+          wanted.add(form)
+        }
+      }
+    }
+  }
+  return wanted
 }
 
 export function targetForSection(section: SemanticSection | null): ScoreTarget {
@@ -134,10 +228,11 @@ export function targetForSection(section: SemanticSection | null): ScoreTarget {
     return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
   })
   return {
-    axes: moodAxes(section?.mood ?? null),
+    axes: sectionAxes(section),
     energy: section?.energy ?? 0.5,
     palette,
     imagery: section?.imagery ?? [],
+    ...(section?.axes !== undefined ? { freeText: true } : {}),
   }
 }
 
@@ -183,9 +278,7 @@ export function scorePreset(
     palette = 1 - best
   }
 
-  const wanted = new Set(
-    target.imagery.flatMap((tag) => IMAGERY_SYNONYMS[tag.toLowerCase()] ?? [tag.toLowerCase()]),
-  )
+  const wanted = wantedTags(target.imagery, target.freeText === true)
   const hits = entry.imagery.filter((tag) => wanted.has(tag)).length
   const imagery = wanted.size === 0 ? 0.5 : Math.min(1, hits / Math.min(2, wanted.size))
 
@@ -229,8 +322,14 @@ export function rankForSection(
 
 export interface LabelPick {
   label: string
+  /**
+   * What ] [ cycles through: the look's pick first (when it can play),
+   * then the scorer's ranked list.
+   */
   candidates: Scored[]
   chosen: string | null
+  /** Who decided: the owner's saved choice, the song's look, or the scorer. */
+  source: 'saved' | 'look' | 'scorer'
   /** True when the owner picked it with ] [. */
   fromFeedback: boolean
   reasons: string[]
@@ -239,20 +338,34 @@ export interface LabelPick {
 
 /**
  * Assign one preset per section label, in order of first appearance.
- * The owner's saved choice wins; automatic picks skip any preset already
- * assigned to a chronologically neighbouring section.
+ * The owner's saved choice wins; then the look's preset for the label,
+ * when it is usable and no chronological neighbour already plays it;
+ * then the scorer, skipping any preset already assigned to a
+ * chronologically neighbouring section.
  */
 export function pickForSections(
   sections: SemanticSection[],
   feedback: Feedback,
   catalog: Record<string, CatalogEntry> = CATALOG,
+  look: SongLook | null = null,
 ): Map<string, LabelPick> {
   const byLabel = new Map<string, LabelPick>()
   const assigned = new Map<string, string>() // label -> preset
   for (let i = 0; i < sections.length; i++) {
     const label = sections[i].label
     if (byLabel.has(label)) continue
-    const candidates = rankForSection(sections[i], feedback, PRESET_SCORE.candidates, catalog)
+    const target = targetForSection(sections[i])
+    let candidates = rankForSection(sections[i], feedback, PRESET_SCORE.candidates, catalog)
+    const lookName =
+      look && Object.hasOwn(look.presets, label) && isUsable(look.presets[label], feedback, catalog)
+        ? look.presets[label]
+        : null
+    if (lookName !== null) {
+      candidates = [
+        scorePreset(lookName, target, catalog),
+        ...candidates.filter((c) => c.name !== lookName),
+      ]
+    }
     const neighbours = new Set<string>()
     sections.forEach((section, j) => {
       if (section.label !== label) return
@@ -266,10 +379,13 @@ export function pickForSections(
     })
     const saved = feedback.chosen[label]
     let chosen: Scored | null = null
-    let fromFeedback = false
+    let source: LabelPick['source'] = 'scorer'
     if (saved && isUsable(saved, feedback, catalog)) {
-      chosen = candidates.find((c) => c.name === saved) ?? scorePreset(saved, targetForSection(sections[i]), catalog)
-      fromFeedback = true
+      chosen = candidates.find((c) => c.name === saved) ?? scorePreset(saved, target, catalog)
+      source = 'saved'
+    } else if (lookName !== null && !neighbours.has(lookName)) {
+      chosen = candidates[0]
+      source = 'look'
     } else {
       chosen = candidates.find((c) => !neighbours.has(c.name)) ?? candidates[0] ?? null
     }
@@ -279,7 +395,8 @@ export function pickForSections(
       label,
       candidates,
       chosen: chosen?.name ?? null,
-      fromFeedback,
+      source,
+      fromFeedback: source === 'saved',
       reasons: chosen?.reasons ?? [],
       runnerUp: runnerUp?.name ?? null,
     })

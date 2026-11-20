@@ -9,7 +9,7 @@ import { LAYOUT_NAMES } from './layout'
 import { onsetsForLine, parseWordTimes, type SongEntry, type WordTimes } from './library'
 import { activeLineIndex, parseLrc, type LyricLine } from './lrc'
 import {
-  chooseMotif,
+  motifForSection,
   paramsForSection,
   sectionGrammar,
   textParamsForLine,
@@ -127,7 +127,7 @@ export function Player({ song, audio, feedback, onBack }: PlayerProps) {
     const semantics = semanticsRef.current
     const fb = feedbackFor(feedbackRef.current, song.slug)
     const map = semantics
-      ? pickForSections(semantics.sections, fb)
+      ? pickForSections(semantics.sections, fb, CATALOG, semantics.look ?? null)
       : new Map<string, LabelPick>()
     const candidates = rankForSection(null, fb)
     const saved = fb.chosen['neutral']
@@ -137,6 +137,7 @@ export function Player({ song, audio, feedback, onBack }: PlayerProps) {
       label: 'neutral',
       candidates,
       chosen,
+      source: saved && isUsable(saved, fb) ? 'saved' : 'scorer',
       fromFeedback: Boolean(saved && isUsable(saved, fb)),
       reasons: scored?.reasons ?? [],
       runnerUp: candidates.find((c) => c.name !== chosen)?.name ?? null,
@@ -514,6 +515,8 @@ export function Player({ song, audio, feedback, onBack }: PlayerProps) {
       // The base grammar follows the beat-committed section; a refrain
       // keeps its source line's grammar. G drops focus and gestures.
       const choreo = lineIndex >= 0 ? choreoRef.current[lineIndex] : undefined
+      // The song's two type voices come from its look (semantics v3).
+      const look = semantics?.look ?? null
       let motion: LineMotion = {}
       if (semantics && choreo) {
         motion = gesturesOnRef.current
@@ -521,13 +524,13 @@ export function Player({ song, audio, feedback, onBack }: PlayerProps) {
               grammar:
                 choreo.refrainOf !== null
                   ? choreo.grammar
-                  : sectionGrammar(committedSection),
+                  : sectionGrammar(committedSection, look),
               focus: choreo.focus,
               gestures: choreo.gestures,
             }
-          : { grammar: sectionGrammar(committedSection) }
+          : { grammar: sectionGrammar(committedSection, look) }
       }
-      const textParams = textParamsForLine(committedSection, emphasis, motion)
+      const textParams = textParamsForLine(committedSection, emphasis, motion, look)
       const line =
         physicsTextRef.current && showLyricsRef.current && lineIndex >= 0
           ? {
@@ -549,7 +552,7 @@ export function Player({ song, audio, feedback, onBack }: PlayerProps) {
       )
 
       if (debugRef.current) {
-        const { motif, tag } = chooseMotif(section?.imagery ?? [])
+        const { motif, tag } = motifForSection(section)
         const o = overridesRef.current
         const eff = (over: string | null | undefined, mapped: string) =>
           over ? `${over} (forced)` : mapped
@@ -561,7 +564,7 @@ export function Player({ song, audio, feedback, onBack }: PlayerProps) {
           `sem    ${!semanticsRef.current ? 'none loaded' : semanticsOnRef.current ? 'on' : 'off (neutral)'}`,
           `sect   ${section ? `${section.label} · ${section.mood} · energy ${section.energy.toFixed(2)}` : '(none)'}`,
           `commit ${committedRef.current.key}  ·  emph ${emphasis.toFixed(2)}  ·  motif ${tag ? `${motif}<-${tag}` : motif}`,
-          `bg     ${mode}  ·  ${background.currentPreset}${pick?.fromFeedback ? ' (saved)' : ''}`,
+          `bg     ${mode}  ·  ${background.currentPreset}${pick?.source === 'saved' ? ' (saved)' : pick?.source === 'look' ? ' (look)' : ''}`,
           `pick   ${entry ? entry.description.slice(0, 58) : '(not in catalog)'}`,
           `why    ${pick?.reasons.join(' · ') || '—'}  ·  next ${(pick?.runnerUp ?? '—').slice(0, 26)}`,
           `text   ${physicsTextRef.current ? 'physics' : 'dom line'}  ·  voice ${eff(o.voice, textParams.voice)}  ·  layout ${eff(o.layout, textParams.layout)}  ·  anchor ${textParams.anchor}`,

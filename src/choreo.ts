@@ -110,7 +110,12 @@ export function buildChoreo(
             source: 'direction' as const,
           }))
         : lexiconGestures(words)
-    out.push({ grammar: sectionGrammar(section), focus, gestures, refrainOf: null })
+    out.push({
+      grammar: sectionGrammar(section, semantics?.look ?? null),
+      focus,
+      gestures,
+      refrainOf: null,
+    })
   })
   return out
 }

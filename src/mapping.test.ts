@@ -8,7 +8,7 @@ import {
   sectionGrammar,
   textParamsForLine,
 } from './mapping'
-import type { SemanticSection } from './semantics'
+import type { SemanticSection, SongLook } from './semantics'
 
 const section = (over: Partial<SemanticSection> = {}): SemanticSection => ({
   start: 0,
@@ -165,5 +165,64 @@ describe('textParamsForLine (section grammar + line meaning)', () => {
     expect(layoutForLine(0.9)).toBe('focus')
     expect(layoutForLine(0.7)).toBe('lockup')
     expect(layoutForLine(0.5)).toBe('centered')
+  })
+})
+
+describe('the look supplies the two voices', () => {
+  const look: SongLook = {
+    description: 'made-up look',
+    palette: ['#000000', '#111111', '#222222'],
+    voices: { main: 'serif', accent: 'slab' },
+    presets: {},
+  }
+
+  it('sets a section in the voice it names', () => {
+    expect(sectionGrammar(section({ voice: 'main' }), look).voice).toBe('serif')
+    expect(sectionGrammar(section({ voice: 'accent' }), look).voice).toBe('slab')
+    expect(sectionGrammar(section({ voice: 'accent' }), look).accentVoice).toBe('slab')
+  })
+
+  it('uses the main voice when a section names none, and between sections', () => {
+    expect(sectionGrammar(section(), look).voice).toBe('serif') // partial look
+    expect(sectionGrammar(null, look).voice).toBe('serif')
+    expect(sectionGrammar(null, look).accentVoice).toBe('slab')
+  })
+
+  it('switches to the accent voice at emphasis 0.85 and above, not below', () => {
+    const s = section({ voice: 'main' })
+    expect(textParamsForLine(s, 0.84, {}, look).voice).toBe('serif')
+    expect(textParamsForLine(s, 0.85, {}, look).voice).toBe('slab')
+    expect(textParamsForLine(s, 1, {}, look).voice).toBe('slab')
+  })
+
+  it('leaves hold, anchor and entrance to the axes and the energy', () => {
+    const s = section({ mood: 'menacing', energy: 0.8 })
+    const without = sectionGrammar(s)
+    const withLook = sectionGrammar(s, look)
+    expect(withLook.hold).toBe(without.hold)
+    expect(withLook.anchor).toBe(without.anchor)
+    expect(withLook.entrance).toBe(without.entrance)
+    expect(withLook.exit).toBe(without.exit)
+  })
+
+  it('keeps the mood-anchor voices for files without a look', () => {
+    expect(sectionGrammar(section({ mood: 'menacing' })).voice).toBe('condensed')
+    expect(sectionGrammar(section({ mood: 'menacing' })).accentVoice).toBe('marker')
+    expect(textParamsForLine(section({ mood: 'menacing' }), 0.9).voice).toBe('marker')
+  })
+})
+
+describe('free-text imagery', () => {
+  it('matches a version 3 tag by its words', () => {
+    const axes = { arousal: 0.5, valence: 0.5, tension: 0.5, warmth: 0.5 }
+    expect(chooseMotif(['cold rain on glass'], true).motif).toBe('rain')
+    expect(chooseMotif(['a single ember'], true).motif).toBe('embers')
+    expect(chooseMotif(['paper lanterns'], true).motif).toBe('haze')
+    expect(paramsForSection(section({ axes, imagery: ['distant star field'] }), 0.5).motif).toBe('stars')
+  })
+
+  it('matches whole tags only in older files, as before', () => {
+    expect(chooseMotif(['cold rain on glass']).motif).toBe('haze')
+    expect(paramsForSection(section({ imagery: ['distant star field'] }), 0.5).motif).toBe('haze')
   })
 })

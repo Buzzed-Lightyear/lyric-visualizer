@@ -15,7 +15,7 @@ import { unwrapButterchurn } from './background'
 import { drawDebug } from './debug'
 import { GESTURE_NAMES } from './gestures'
 import { LAYOUT_NAMES, LAYOUTS, type LayoutName } from './layout'
-import { chooseMotif, NEUTRAL_PARAMS, paramsForSection, type SceneParams, type TextParams } from './mapping'
+import { motifForSection, NEUTRAL_PARAMS, paramsForSection, type SceneParams, type TextParams } from './mapping'
 import { ENTRANCE_NAMES, EXIT_NAMES, HOLD_NAMES } from './parts'
 import { loadAllPresets } from './presetPacks'
 import { parseIndex } from './library'
@@ -228,7 +228,7 @@ function renderTile(section: SemanticSection | null): Tile {
     steadyMaxStep = Math.max(steadyMaxStep, gridDistance(prev, g))
     prev = g
   }
-  const { motif } = chooseMotif(section?.imagery ?? [])
+  const { motif } = motifForSection(section)
   return {
     label: section ? section.label : 'neutral (S off)',
     motif: section ? motif : 'drift',
@@ -1002,7 +1002,7 @@ async function run(): Promise<Report> {
   // One draw-time probe per motif, on the section that uses it.
   const motifSections = new Map<string, SemanticSection | null>([['drift', null]])
   for (const section of semantics.sections) {
-    const { motif } = chooseMotif(section.imagery)
+    const { motif } = motifForSection(section)
     if (!motifSections.has(motif)) motifSections.set(motif, section)
   }
   const drawPerMotif: Record<string, { avg: number; p99: number }> = {}
@@ -1099,7 +1099,12 @@ async function run(): Promise<Report> {
 
   // The chosen background preset per section of the song.
   const feedbackFile = parseFeedbackFile((await import('./presetFeedback.json')).default)
-  const picks = pickForSections(semantics.sections, feedbackFor(feedbackFile, slug))
+  const picks = pickForSections(
+    semantics.sections,
+    feedbackFor(feedbackFile, slug),
+    CATALOG,
+    semantics.look ?? null,
+  )
   const pickLines: string[] = []
   for (const pick of picks.values()) {
     if (!pick.chosen) {
@@ -1108,7 +1113,7 @@ async function run(): Promise<Report> {
     }
     const entry = CATALOG[pick.chosen]
     pickLines.push(
-      `${pick.label.padEnd(11)} -> ${pick.chosen.slice(0, 52)}${pick.fromFeedback ? '  [saved]' : ''}  (${pick.reasons.join(', ')})`,
+      `${pick.label.padEnd(11)} -> ${pick.chosen.slice(0, 52)}${pick.source === 'saved' ? '  [saved]' : pick.source === 'look' ? '  [look]' : ''}  (${pick.reasons.join(', ')})`,
     )
     pickLines.push(`${''.padEnd(11)}    "${entry?.description ?? ''}"`.slice(0, 120))
   }
