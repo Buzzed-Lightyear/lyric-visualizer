@@ -92,6 +92,42 @@ export const SemanticsOutputSchema = z.object({
 
 export type SemanticsOutput = z.infer<typeof SemanticsOutputSchema>
 
+/**
+ * Drop focus indices that point past a line's last word — the model's most
+ * common slip is an index exactly one past the end, and the renderer would
+ * ignore it anyway; rejecting a whole document over it throws away good
+ * annotation. A line whose focus empties loses its gesture and direction
+ * too (they require focus). Every repair is reported. All other problems
+ * stay hard failures.
+ */
+export function repairFocus(
+  output: SemanticsOutput,
+  lines: readonly { time: number; wordCount: number }[],
+): string[] {
+  const notes: string[] = []
+  for (const line of output.lines) {
+    if (!line.focus) continue
+    const match = lines.find((l) => Math.abs(l.time - line.time) < 0.05)
+    if (!match) continue // validateFocusRanges reports unmatched lines
+    const kept = line.focus.filter((index) => index < match.wordCount)
+    if (kept.length === line.focus.length) continue
+    const dropped = line.focus.filter((index) => index >= match.wordCount)
+    if (kept.length > 0) {
+      notes.push(`line at ${line.time}s: dropped out-of-range focus ${dropped.join(',')}`)
+      line.focus = kept
+    } else {
+      notes.push(
+        `line at ${line.time}s: dropped out-of-range focus ${dropped.join(',')}` +
+          (line.gesture ? ` and its "${line.gesture}" gesture` : ''),
+      )
+      line.focus = null
+      line.gesture = null
+      line.direction = null
+    }
+  }
+  return notes
+}
+
 /** Drop null fields so the result matches the on-disk semantics format. */
 export function stripNulls(output: SemanticsOutput): unknown {
   return {
@@ -148,7 +184,9 @@ LINES
 - emphasis is 0..1: how hard this line should land. Most lines sit near 0.5; \
 reserve values above 0.8 for the few lines that hit hardest.
 - focus: the 1-2 word indices that carry the line's meaning. Give focus to most \
-lines; leave it off lines with no clear carrying word.
+lines; leave it off lines with no clear carrying word. Use ONLY the indices \
+printed next to the words above — a line whose last word is numbered N has no \
+index N+1.
 - gesture: a named move the focus words perform. Give gestures to roughly a \
 third of the lines — the ones where the WORDS themselves act. If every line \
 gets a special move it reads as random again. A gesture requires focus.

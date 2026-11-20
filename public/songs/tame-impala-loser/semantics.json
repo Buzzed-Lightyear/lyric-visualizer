@@ -1,0 +1,389 @@
+{
+  "version": 2,
+  "sections": [
+    {
+      "start": 0,
+      "end": 12.62,
+      "label": "intro",
+      "energy": 0.3,
+      "mood": "suspended",
+      "palette": [
+        "#0b0a1a",
+        "#6a4c93",
+        "#c06c84",
+        "#f8b195"
+      ],
+      "imagery": [
+        "haze",
+        "night-sky"
+      ]
+    },
+    {
+      "start": 12.62,
+      "end": 59.67,
+      "label": "verse 1",
+      "energy": 0.5,
+      "mood": "weary",
+      "palette": [
+        "#0d0b18",
+        "#8e5ea2",
+        "#e07a5f",
+        "#f2cc8f"
+      ],
+      "imagery": [
+        "haze",
+        "streetlights"
+      ]
+    },
+    {
+      "start": 59.67,
+      "end": 87.56,
+      "label": "chorus",
+      "energy": 0.65,
+      "mood": "mournful",
+      "palette": [
+        "#120818",
+        "#b23a48",
+        "#f28482",
+        "#f5cac3"
+      ],
+      "imagery": [
+        "tears",
+        "city-night"
+      ]
+    },
+    {
+      "start": 87.56,
+      "end": 123.23,
+      "label": "verse 2",
+      "energy": 0.55,
+      "mood": "brooding",
+      "palette": [
+        "#0a0c1a",
+        "#5c4d7d",
+        "#d1495b",
+        "#edae49"
+      ],
+      "imagery": [
+        "smoke",
+        "streetlights"
+      ]
+    },
+    {
+      "start": 123.23,
+      "end": 145.33,
+      "label": "chorus",
+      "energy": 0.65,
+      "mood": "mournful",
+      "palette": [
+        "#120818",
+        "#b23a48",
+        "#f28482",
+        "#f5cac3"
+      ],
+      "imagery": [
+        "tears",
+        "city-night"
+      ]
+    },
+    {
+      "start": 145.33,
+      "end": 168.11,
+      "label": "bridge",
+      "energy": 0.4,
+      "mood": "calm",
+      "palette": [
+        "#05081a",
+        "#2b4c7e",
+        "#9fb3df",
+        "#f7e9b8"
+      ],
+      "imagery": [
+        "stars",
+        "night-sky",
+        "streetlights"
+      ]
+    },
+    {
+      "start": 168.11,
+      "end": 197.42,
+      "label": "verse 3",
+      "energy": 0.55,
+      "mood": "weary",
+      "palette": [
+        "#0c0a16",
+        "#7b5ea7",
+        "#e07a5f",
+        "#f4d35e"
+      ],
+      "imagery": [
+        "haze",
+        "night-sky"
+      ]
+    },
+    {
+      "start": 197.42,
+      "end": 223,
+      "label": "outro",
+      "energy": 0.4,
+      "mood": "hollow",
+      "palette": [
+        "#08070f",
+        "#4a4e69",
+        "#9a8c98",
+        "#f2e9e4"
+      ],
+      "imagery": [
+        "fog",
+        "stars"
+      ]
+    }
+  ],
+  "lines": [
+    {
+      "time": 12.62,
+      "emphasis": 0.6,
+      "focus": [
+        6,
+        8
+      ]
+    },
+    {
+      "time": 17.94,
+      "emphasis": 0.2
+    },
+    {
+      "time": 24.18,
+      "emphasis": 0.6,
+      "focus": [
+        5,
+        6
+      ],
+      "gesture": "break"
+    },
+    {
+      "time": 29.98,
+      "emphasis": 0.2
+    },
+    {
+      "time": 35.64,
+      "emphasis": 0.5,
+      "focus": [
+        7
+      ]
+    },
+    {
+      "time": 41.38,
+      "emphasis": 0.6,
+      "focus": [
+        7
+      ]
+    },
+    {
+      "time": 47.35,
+      "emphasis": 0.6,
+      "focus": [
+        3
+      ],
+      "gesture": "tremble"
+    },
+    {
+      "time": 52.93,
+      "emphasis": 0.5,
+      "focus": [
+        3
+      ]
+    },
+    {
+      "time": 59.67,
+      "emphasis": 0.85,
+      "focus": [
+        2
+      ],
+      "gesture": "fall",
+      "direction": "down"
+    },
+    {
+      "time": 65.38,
+      "emphasis": 0.7,
+      "focus": [
+        3,
+        5
+      ],
+      "gesture": "apart"
+    },
+    {
+      "time": 71.05,
+      "emphasis": 0.8,
+      "focus": [
+        2
+      ],
+      "gesture": "break"
+    },
+    {
+      "time": 74.09,
+      "emphasis": 0.2
+    },
+    {
+      "time": 76.66,
+      "emphasis": 0.5,
+      "focus": [
+        4
+      ]
+    },
+    {
+      "time": 81.7,
+      "emphasis": 0.2
+    },
+    {
+      "time": 87.56,
+      "emphasis": 0.55,
+      "focus": [
+        5,
+        6
+      ]
+    },
+    {
+      "time": 94.02,
+      "emphasis": 0.2
+    },
+    {
+      "time": 98.65,
+      "emphasis": 0.5,
+      "focus": [
+        7
+      ]
+    },
+    {
+      "time": 104.96,
+      "emphasis": 0.6,
+      "focus": [
+        0,
+        4
+      ]
+    },
+    {
+      "time": 110.72,
+      "emphasis": 0.65,
+      "focus": [
+        1
+      ],
+      "gesture": "fall"
+    },
+    {
+      "time": 116.49,
+      "emphasis": 0.7,
+      "focus": [
+        5
+      ],
+      "gesture": "strike"
+    },
+    {
+      "time": 123.23,
+      "emphasis": 0.85
+    },
+    {
+      "time": 128.75,
+      "emphasis": 0.7
+    },
+    {
+      "time": 134.64,
+      "emphasis": 0.8
+    },
+    {
+      "time": 140.49,
+      "emphasis": 0.55,
+      "focus": [
+        4
+      ]
+    },
+    {
+      "time": 145.33,
+      "emphasis": 0.45,
+      "focus": [
+        2
+      ]
+    },
+    {
+      "time": 151.02,
+      "emphasis": 0.45,
+      "focus": [
+        0,
+        1
+      ]
+    },
+    {
+      "time": 156.74,
+      "emphasis": 0.45,
+      "focus": [
+        3
+      ]
+    },
+    {
+      "time": 162.6,
+      "emphasis": 0.6,
+      "focus": [
+        1
+      ],
+      "gesture": "rise",
+      "direction": "up"
+    },
+    {
+      "time": 168.11,
+      "emphasis": 0.2
+    },
+    {
+      "time": 171.98,
+      "emphasis": 0.5,
+      "focus": [
+        6
+      ]
+    },
+    {
+      "time": 177.37,
+      "emphasis": 0.5,
+      "focus": [
+        4
+      ]
+    },
+    {
+      "time": 183.12,
+      "emphasis": 0.65,
+      "focus": [
+        5
+      ]
+    },
+    {
+      "time": 189.13,
+      "emphasis": 0.6,
+      "focus": [
+        6,
+        7
+      ]
+    },
+    {
+      "time": 197.42,
+      "emphasis": 0.5,
+      "focus": [
+        1,
+        2
+      ]
+    },
+    {
+      "time": 203.41,
+      "emphasis": 0.55,
+      "focus": [
+        1
+      ],
+      "gesture": "linger"
+    },
+    {
+      "time": 208.89,
+      "emphasis": 0.9,
+      "focus": [
+        0
+      ],
+      "gesture": "strike"
+    }
+  ]
+}

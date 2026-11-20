@@ -12,7 +12,13 @@
       "transition": "Zylot - In death there is life (Geiss Layered Mix)",
       "chorus": "Zylot - In death there is life (Geiss Layered Mix)",
       "verse 4": "Studio Music and Unchained - Rapid Alteration"
+    },
+    "kanye-west-black-skinhead": {},
+    "ski-mask-the-slump-god-catch-me-outside-2": {
+      "verse 2": "flexi + geiss - pogo-cubes on tokamak matter [mind over matter remix]2"
     }
   },
-  "banned": []
+  "banned": [
+    "martin - attack of the beast"
+  ]
 }

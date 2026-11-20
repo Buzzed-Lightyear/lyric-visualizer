@@ -7,7 +7,7 @@ import {
   neutralSemantics,
   validateGenerated,
 } from './semanticsChecks'
-import { SemanticsOutputSchema, buildPrompt, stripNulls } from './semanticsGen'
+import { SemanticsOutputSchema, buildPrompt, repairFocus, stripNulls } from './semanticsGen'
 
 // Made-up lyrics only.
 const LINES: LyricLine[] = [
@@ -164,6 +164,38 @@ describe('extraction schema and prompt', () => {
     const { semantics, errors } = parseSemantics(doc)
     expect(errors).toEqual([])
     expect(semantics!.lines[1]).toEqual({ time: 6, emphasis: 0.5 })
+  })
+
+  it('repairs out-of-range focus instead of failing the document', () => {
+    const output = SemanticsOutputSchema.parse({
+      version: 2,
+      sections: [section()],
+      lines: [
+        // index 3 is one past the end of a 3-word line: dropped, 1 kept.
+        { time: 2, emphasis: 0.6, focus: [1, 3], gesture: 'rise', direction: null },
+        // the only focus index is bad: focus, gesture and direction all go.
+        { time: 6, emphasis: 0.5, focus: [7], gesture: 'halt', direction: 'left' },
+        // in range: untouched.
+        { time: 10, emphasis: 0.5, focus: [0], gesture: null, direction: null },
+        // no matching lyric line: left for validateFocusRanges to report.
+        { time: 99, emphasis: 0.5, focus: [5], gesture: null, direction: null },
+      ],
+    })
+    const notes = repairFocus(output, [
+      { time: 2, wordCount: 3 },
+      { time: 6, wordCount: 4 },
+      { time: 10, wordCount: 2 },
+    ])
+    expect(notes).toHaveLength(2)
+    expect(notes[0]).toContain('dropped out-of-range focus 3')
+    expect(notes[1]).toContain('"halt" gesture')
+    expect(output.lines[0].focus).toEqual([1])
+    expect(output.lines[0].gesture).toBe('rise')
+    expect(output.lines[1].focus).toBeNull()
+    expect(output.lines[1].gesture).toBeNull()
+    expect(output.lines[1].direction).toBeNull()
+    expect(output.lines[2].focus).toEqual([0])
+    expect(output.lines[3].focus).toEqual([5])
   })
 
   it('builds a prompt with indexed words and no unending lines', () => {

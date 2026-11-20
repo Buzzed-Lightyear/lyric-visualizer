@@ -2,6 +2,23 @@
   "version": 1,
   "songs": [
     {
+      "slug": "dj-mykael-v-tr-be-on-the-move",
+      "base": "/songs/dj-mykael-v-tr-be-on-the-move/",
+      "title": "TR!BE ON THE MOVE",
+      "artist": "DJ Mykael V",
+      "album": "TR!BE ON THE MOVE",
+      "duration": 170.7,
+      "audio": "audio.mp3",
+      "semantics": "api",
+      "colors": [
+        "#c9a227",
+        "#d4a017",
+        "#ff6a00",
+        "#8a8f99",
+        "#3a4a7a"
+      ]
+    },
+    {
       "slug": "kanye-west-black-skinhead",
       "base": "/songs/kanye-west-black-skinhead/",
       "title": "Black Skinhead",
@@ -11,15 +28,15 @@
       "audio": "audio.mp3",
       "semantics": "api",
       "colors": [
-        "#8b0000",
-        "#b30000",
-        "#c1121f",
-        "#ff2a00",
-        "#c1121f",
-        "#8a0f0f",
-        "#c1121f",
-        "#ff2a00",
-        "#ffffff"
+        "#3a3a40",
+        "#c41e1e",
+        "#8b0d14",
+        "#ff3b1f",
+        "#8b0d14",
+        "#9a1010",
+        "#8b0d14",
+        "#ff3b1f",
+        "#ff2a1a"
       ]
     },
     {
@@ -43,6 +60,67 @@
         "#8fc1ff",
         "#8f3e4e",
         "#8fc1ff"
+      ]
+    },
+    {
+      "slug": "ski-mask-the-slump-god-catch-me-outside-2",
+      "base": "/songs/ski-mask-the-slump-god-catch-me-outside-2/",
+      "title": "Catch Me Outside 2",
+      "artist": "Ski Mask The Slump God",
+      "album": "Catch Me Outside 2",
+      "duration": 126.4,
+      "audio": "audio.mp3",
+      "semantics": "api",
+      "colors": [
+        "#3a2a6b",
+        "#b0121b",
+        "#1d4ed8",
+        "#0f766e",
+        "#1d4ed8",
+        "#3a2a6b"
+      ]
+    },
+    {
+      "slug": "tame-impala-dracula-with-jennie",
+      "base": "/songs/tame-impala-dracula-with-jennie/",
+      "title": "Dracula (with JENNIE)",
+      "artist": "Tame Impala",
+      "album": "Dracula (with JENNIE)",
+      "duration": 209.8,
+      "audio": "audio.mp3",
+      "semantics": "api",
+      "colors": [
+        "#7a1f4a",
+        "#2e4a8c",
+        "#5a1a3a",
+        "#a01e4a",
+        "#5a1a3a",
+        "#c0143c",
+        "#d0306a",
+        "#3a4aa0",
+        "#5a1a3a",
+        "#c0143c",
+        "#8a1a3a"
+      ]
+    },
+    {
+      "slug": "tame-impala-loser",
+      "base": "/songs/tame-impala-loser/",
+      "title": "Loser",
+      "artist": "Tame Impala",
+      "album": "Deadbeat",
+      "duration": 223.1,
+      "audio": "audio.mp3",
+      "semantics": "api",
+      "colors": [
+        "#6a4c93",
+        "#8e5ea2",
+        "#b23a48",
+        "#5c4d7d",
+        "#b23a48",
+        "#2b4c7e",
+        "#7b5ea7",
+        "#4a4e69"
       ]
     }
   ]

@@ -14,6 +14,7 @@ import type { LyricLine } from '../src/lrc'
 import { automaticChecks } from '../src/semanticsChecks'
 import {
   buildPrompt,
+  repairFocus,
   SemanticsOutputSchema,
   stripNulls,
   type ExtractionInput,
@@ -115,6 +116,11 @@ export async function generateSemantics(
     if (!parsed.output) {
       lastErrors = parsed.errors
     } else {
+      const wordCounts = lrcLines.map((line) => ({
+        time: line.time,
+        wordCount: line.text.split(/\s+/).filter(Boolean).length,
+      }))
+      for (const note of repairFocus(parsed.output, wordCounts)) log(`  repaired: ${note}`)
       const doc = stripNulls(parsed.output)
       const { semantics, errors } = parseSemantics(doc)
       if (semantics) {

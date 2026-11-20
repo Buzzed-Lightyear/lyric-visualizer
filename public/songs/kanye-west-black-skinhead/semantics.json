@@ -5,137 +5,132 @@
       "start": 0,
       "end": 26.17,
       "label": "intro",
-      "energy": 0.7,
-      "mood": "menacing",
+      "energy": 0.6,
+      "mood": "tense",
       "palette": [
-        "#050505",
-        "#8b0000",
-        "#3a3a3a",
-        "#d9d9d9"
+        "#07070a",
+        "#3a3a40",
+        "#b0121b"
       ],
       "imagery": [
-        "smoke",
-        "gunmetal"
+        "gunmetal",
+        "smoke"
       ]
     },
     {
       "start": 26.17,
       "end": 55.38,
       "label": "verse 1",
-      "energy": 0.8,
+      "energy": 0.85,
       "mood": "furious",
       "palette": [
-        "#0a0303",
-        "#b30000",
-        "#4a4a4a",
-        "#f2f2f2"
+        "#050505",
+        "#c41e1e",
+        "#f2f2f2",
+        "#5a5a60"
       ],
       "imagery": [
-        "sirens",
-        "fire"
+        "fire",
+        "sirens"
       ]
     },
     {
       "start": 55.38,
       "end": 71.63,
       "label": "chorus",
-      "energy": 0.85,
+      "energy": 0.8,
       "mood": "menacing",
       "palette": [
-        "#080208",
-        "#c1121f",
-        "#ff6b00",
-        "#e0e0e0"
+        "#0a0608",
+        "#8b0d14",
+        "#d9d9d9"
       ],
       "imagery": [
-        "embers",
-        "night-sky"
+        "night-sky",
+        "smoke"
       ]
     },
     {
       "start": 71.63,
       "end": 92.37,
-      "label": "refrain",
+      "label": "bridge",
       "energy": 0.9,
-      "mood": "tense",
+      "mood": "furious",
       "palette": [
-        "#050505",
-        "#ff2a00",
-        "#ffd000",
-        "#9a9a9a"
+        "#060404",
+        "#ff3b1f",
+        "#ffb000",
+        "#2a2a2a"
       ],
       "imagery": [
-        "sparks",
-        "storm"
+        "fire",
+        "sparks"
       ]
     },
     {
       "start": 92.37,
       "end": 107.57,
       "label": "chorus",
-      "energy": 0.85,
+      "energy": 0.8,
       "mood": "menacing",
       "palette": [
-        "#080208",
-        "#c1121f",
-        "#ff6b00",
-        "#e0e0e0"
+        "#0a0608",
+        "#8b0d14",
+        "#d9d9d9"
       ],
       "imagery": [
-        "embers",
-        "night-sky"
+        "night-sky",
+        "smoke"
       ]
     },
     {
       "start": 107.57,
       "end": 136.5,
       "label": "verse 2",
-      "energy": 0.85,
-      "mood": "furious",
+      "energy": 0.88,
+      "mood": "menacing",
       "palette": [
-        "#06060a",
-        "#8a0f0f",
-        "#c0c0c0",
-        "#ffe9a8"
+        "#040406",
+        "#9a1010",
+        "#e8e8e8",
+        "#4a4a52"
       ],
       "imagery": [
         "gunmetal",
-        "night-sky",
-        "fire"
+        "sirens"
       ]
     },
     {
       "start": 136.5,
       "end": 152.79,
       "label": "chorus",
-      "energy": 0.85,
+      "energy": 0.8,
       "mood": "menacing",
       "palette": [
-        "#080208",
-        "#c1121f",
-        "#ff6b00",
-        "#e0e0e0"
+        "#0a0608",
+        "#8b0d14",
+        "#d9d9d9"
       ],
       "imagery": [
-        "embers",
-        "night-sky"
+        "night-sky",
+        "smoke"
       ]
     },
     {
       "start": 152.79,
       "end": 168,
-      "label": "refrain",
+      "label": "bridge",
       "energy": 0.9,
-      "mood": "tense",
+      "mood": "furious",
       "palette": [
-        "#050505",
-        "#ff2a00",
-        "#ffd000",
-        "#9a9a9a"
+        "#060404",
+        "#ff3b1f",
+        "#ffb000",
+        "#2a2a2a"
       ],
       "imagery": [
-        "sparks",
-        "storm"
+        "fire",
+        "sparks"
       ]
     },
     {
@@ -145,15 +140,13 @@
       "energy": 0.95,
       "mood": "furious",
       "palette": [
-        "#000000",
-        "#ffffff",
-        "#d00000",
-        "#ff8c00"
+        "#020202",
+        "#ff2a1a",
+        "#ffffff"
       ],
       "imagery": [
         "fire",
-        "prayer",
-        "storm"
+        "embers"
       ]
     }
   ],
@@ -162,8 +155,7 @@
       "time": 26.17,
       "emphasis": 0.7,
       "focus": [
-        2,
-        3
+        4
       ],
       "gesture": "strike"
     },
@@ -176,7 +168,7 @@
     },
     {
       "time": 29.86,
-      "emphasis": 0.55,
+      "emphasis": 0.5,
       "focus": [
         1
       ]
@@ -194,9 +186,7 @@
       "emphasis": 0.6,
       "focus": [
         2
-      ],
-      "gesture": "rise",
-      "direction": "up"
+      ]
     },
     {
       "time": 35.47,
@@ -216,12 +206,13 @@
     },
     {
       "time": 38.43,
-      "emphasis": 0.8,
+      "emphasis": 0.75,
       "focus": [
         8,
         9
       ],
-      "gesture": "strike"
+      "gesture": "fall",
+      "direction": "down"
     },
     {
       "time": 40.51,
@@ -232,7 +223,7 @@
     },
     {
       "time": 42.31,
-      "emphasis": 0.6,
+      "emphasis": 0.65,
       "focus": [
         6,
         7
@@ -247,7 +238,7 @@
     },
     {
       "time": 46,
-      "emphasis": 0.75,
+      "emphasis": 0.8,
       "focus": [
         0
       ],
@@ -264,7 +255,8 @@
       "time": 49.65,
       "emphasis": 0.5,
       "focus": [
-        3
+        3,
+        4
       ]
     },
     {
@@ -286,15 +278,16 @@
       "time": 55.38,
       "emphasis": 0.6,
       "focus": [
+        3,
         6
-      ],
-      "gesture": "drift"
+      ]
     },
     {
       "time": 57.12,
-      "emphasis": 0.65,
+      "emphasis": 0.7,
       "focus": [
-        3
+        3,
+        6
       ],
       "gesture": "tremble"
     },
@@ -309,12 +302,12 @@
       "time": 60.83,
       "emphasis": 0.6,
       "focus": [
-        4
+        0
       ]
     },
     {
       "time": 62.68,
-      "emphasis": 0.55,
+      "emphasis": 0.5,
       "focus": [
         5
       ],
@@ -329,14 +322,15 @@
     },
     {
       "time": 66.31,
-      "emphasis": 0.6,
+      "emphasis": 0.65,
       "focus": [
+        3,
         5
       ]
     },
     {
       "time": 68.32,
-      "emphasis": 0.55,
+      "emphasis": 0.6,
       "focus": [
         2
       ],
@@ -344,9 +338,8 @@
     },
     {
       "time": 71.63,
-      "emphasis": 0.7,
+      "emphasis": 0.8,
       "focus": [
-        9,
         10
       ],
       "gesture": "fall",
@@ -358,8 +351,7 @@
       "focus": [
         2
       ],
-      "gesture": "rush",
-      "direction": "right"
+      "gesture": "rush"
     },
     {
       "time": 78.17,
@@ -370,17 +362,19 @@
     },
     {
       "time": 79.75,
-      "emphasis": 0.65,
+      "emphasis": 0.7,
       "focus": [
-        5
+        5,
+        6
       ],
       "gesture": "halt"
     },
     {
       "time": 81.49,
-      "emphasis": 0.55,
+      "emphasis": 0.5,
       "focus": [
-        7
+        7,
+        8
       ]
     },
     {
@@ -398,7 +392,7 @@
     },
     {
       "time": 94.06,
-      "emphasis": 0.65
+      "emphasis": 0.7
     },
     {
       "time": 95.95,
@@ -410,7 +404,7 @@
     },
     {
       "time": 99.75,
-      "emphasis": 0.55
+      "emphasis": 0.5
     },
     {
       "time": 101.54,
@@ -418,15 +412,15 @@
     },
     {
       "time": 103.3,
-      "emphasis": 0.6
+      "emphasis": 0.65
     },
     {
       "time": 105.36,
-      "emphasis": 0.55
+      "emphasis": 0.6
     },
     {
       "time": 107.57,
-      "emphasis": 0.75,
+      "emphasis": 0.7,
       "focus": [
         3
       ],
@@ -441,52 +435,54 @@
     },
     {
       "time": 110.98,
-      "emphasis": 0.6,
+      "emphasis": 0.65,
       "focus": [
         3
       ]
     },
     {
       "time": 112.55,
-      "emphasis": 0.6,
+      "emphasis": 0.7,
       "focus": [
-        4
-      ]
+        4,
+        5
+      ],
+      "gesture": "apart"
     },
     {
       "time": 114.51,
       "emphasis": 0.65,
       "focus": [
         4
-      ]
+      ],
+      "gesture": "swell"
     },
     {
       "time": 116.43,
-      "emphasis": 0.6,
+      "emphasis": 0.55,
       "focus": [
         3
-      ],
-      "gesture": "rise",
-      "direction": "up"
+      ]
     },
     {
       "time": 118.31,
-      "emphasis": 0.7,
+      "emphasis": 0.75,
       "focus": [
         4
-      ]
+      ],
+      "gesture": "swell"
     },
     {
       "time": 120.27,
       "emphasis": 0.7,
       "focus": [
-        3
-      ],
-      "gesture": "rise"
+        1,
+        2
+      ]
     },
     {
       "time": 122.19,
-      "emphasis": 0.75,
+      "emphasis": 0.8,
       "focus": [
         0,
         1
@@ -524,22 +520,25 @@
       "time": 130.98,
       "emphasis": 0.6,
       "focus": [
+        3,
         5
       ],
       "gesture": "tremble"
     },
     {
       "time": 132.75,
-      "emphasis": 0.6,
+      "emphasis": 0.65,
       "focus": [
+        3,
         5
       ]
     },
     {
       "time": 134.64,
-      "emphasis": 0.65,
+      "emphasis": 0.7,
       "focus": [
-        0
+        0,
+        2
       ],
       "gesture": "echo"
     },
@@ -549,10 +548,12 @@
     },
     {
       "time": 138.49,
-      "emphasis": 0.65,
+      "emphasis": 0.7,
       "focus": [
-        3
-      ]
+        3,
+        6
+      ],
+      "gesture": "tremble"
     },
     {
       "time": 140.22,
@@ -564,7 +565,7 @@
     },
     {
       "time": 143.95,
-      "emphasis": 0.55
+      "emphasis": 0.5
     },
     {
       "time": 145.82,
@@ -572,15 +573,15 @@
     },
     {
       "time": 147.61,
-      "emphasis": 0.6
+      "emphasis": 0.65
     },
     {
       "time": 149.52,
-      "emphasis": 0.55
+      "emphasis": 0.6
     },
     {
       "time": 152.79,
-      "emphasis": 0.7
+      "emphasis": 0.8
     },
     {
       "time": 156.27,
@@ -592,11 +593,11 @@
     },
     {
       "time": 161.04,
-      "emphasis": 0.65
+      "emphasis": 0.7
     },
     {
       "time": 162.71,
-      "emphasis": 0.55
+      "emphasis": 0.5
     },
     {
       "time": 164.35,

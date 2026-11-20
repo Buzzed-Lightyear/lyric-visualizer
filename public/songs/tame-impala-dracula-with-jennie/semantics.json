@@ -1,0 +1,523 @@
+{
+  "version": 2,
+  "sections": [
+    {
+      "start": 0,
+      "end": 30.34,
+      "label": "intro",
+      "energy": 0.4,
+      "mood": "suspended",
+      "palette": [
+        "#0b0614",
+        "#7a1f4a",
+        "#c23a6b",
+        "#3d2a7a"
+      ],
+      "imagery": [
+        "night-sky",
+        "haze"
+      ]
+    },
+    {
+      "start": 30.34,
+      "end": 47.33,
+      "label": "verse 1",
+      "energy": 0.55,
+      "mood": "brooding",
+      "palette": [
+        "#090a18",
+        "#2e4a8c",
+        "#8fb4e0",
+        "#6b2a5a"
+      ],
+      "imagery": [
+        "night-sky",
+        "stars"
+      ]
+    },
+    {
+      "start": 47.33,
+      "end": 62.33,
+      "label": "pre-chorus",
+      "energy": 0.6,
+      "mood": "suspended",
+      "palette": [
+        "#0a0612",
+        "#5a1a3a",
+        "#b03060",
+        "#e0a0c0"
+      ],
+      "imagery": [
+        "haze",
+        "night-sky"
+      ]
+    },
+    {
+      "start": 62.33,
+      "end": 79.79,
+      "label": "verse 2",
+      "energy": 0.62,
+      "mood": "tense",
+      "palette": [
+        "#0c0810",
+        "#a01e4a",
+        "#f0c040",
+        "#3a1a5a"
+      ],
+      "imagery": [
+        "city-night",
+        "streetlights"
+      ]
+    },
+    {
+      "start": 79.79,
+      "end": 93.88,
+      "label": "pre-chorus",
+      "energy": 0.6,
+      "mood": "suspended",
+      "palette": [
+        "#0a0612",
+        "#5a1a3a",
+        "#b03060",
+        "#e0a0c0"
+      ],
+      "imagery": [
+        "haze",
+        "night-sky"
+      ]
+    },
+    {
+      "start": 93.88,
+      "end": 110.27,
+      "label": "chorus",
+      "energy": 0.8,
+      "mood": "menacing",
+      "palette": [
+        "#0d0408",
+        "#c0143c",
+        "#ff6a3d",
+        "#5a0a2a"
+      ],
+      "imagery": [
+        "city-night",
+        "sparks",
+        "smoke"
+      ]
+    },
+    {
+      "start": 110.27,
+      "end": 134.78,
+      "label": "verse 3",
+      "energy": 0.66,
+      "mood": "tense",
+      "palette": [
+        "#0a0814",
+        "#d0306a",
+        "#40c0e0",
+        "#f0d0e0"
+      ],
+      "imagery": [
+        "fluorescent",
+        "smoke",
+        "city-night"
+      ]
+    },
+    {
+      "start": 134.78,
+      "end": 145.66,
+      "label": "bridge",
+      "energy": 0.45,
+      "mood": "calm",
+      "palette": [
+        "#07081a",
+        "#3a4aa0",
+        "#a0b8f0",
+        "#c06090"
+      ],
+      "imagery": [
+        "stars",
+        "haze"
+      ]
+    },
+    {
+      "start": 145.66,
+      "end": 160.27,
+      "label": "pre-chorus",
+      "energy": 0.6,
+      "mood": "suspended",
+      "palette": [
+        "#0a0612",
+        "#5a1a3a",
+        "#b03060",
+        "#e0a0c0"
+      ],
+      "imagery": [
+        "haze",
+        "night-sky"
+      ]
+    },
+    {
+      "start": 160.27,
+      "end": 193.22,
+      "label": "chorus",
+      "energy": 0.8,
+      "mood": "menacing",
+      "palette": [
+        "#0d0408",
+        "#c0143c",
+        "#ff6a3d",
+        "#5a0a2a"
+      ],
+      "imagery": [
+        "city-night",
+        "sparks",
+        "smoke"
+      ]
+    },
+    {
+      "start": 193.22,
+      "end": 210,
+      "label": "outro",
+      "energy": 0.6,
+      "mood": "suspended",
+      "palette": [
+        "#0a0610",
+        "#8a1a3a",
+        "#f08a50",
+        "#2a3a7a"
+      ],
+      "imagery": [
+        "night-sky",
+        "embers"
+      ]
+    }
+  ],
+  "lines": [
+    {
+      "time": 1.65,
+      "emphasis": 0.35,
+      "focus": [
+        0
+      ]
+    },
+    {
+      "time": 5.55,
+      "emphasis": 0.35
+    },
+    {
+      "time": 9.47,
+      "emphasis": 0.45,
+      "focus": [
+        0
+      ]
+    },
+    {
+      "time": 15.92,
+      "emphasis": 0.3
+    },
+    {
+      "time": 17.81,
+      "emphasis": 0.65,
+      "focus": [
+        0
+      ],
+      "gesture": "strike"
+    },
+    {
+      "time": 26.81,
+      "emphasis": 0.5,
+      "focus": [
+        0
+      ],
+      "gesture": "echo"
+    },
+    {
+      "time": 30.34,
+      "emphasis": 0.5,
+      "focus": [
+        9
+      ],
+      "gesture": "tremble"
+    },
+    {
+      "time": 32.86,
+      "emphasis": 0.5,
+      "focus": [
+        10
+      ],
+      "gesture": "drift"
+    },
+    {
+      "time": 36.72,
+      "emphasis": 0.5,
+      "focus": [
+        1
+      ]
+    },
+    {
+      "time": 41.22,
+      "emphasis": 0.7,
+      "focus": [
+        5
+      ],
+      "gesture": "fall"
+    },
+    {
+      "time": 47.33,
+      "emphasis": 0.6,
+      "focus": [
+        6,
+        8
+      ],
+      "gesture": "together"
+    },
+    {
+      "time": 50.31,
+      "emphasis": 0.6,
+      "focus": [
+        2
+      ],
+      "gesture": "linger"
+    },
+    {
+      "time": 53.77,
+      "emphasis": 0.55,
+      "focus": [
+        7
+      ],
+      "gesture": "shrink"
+    },
+    {
+      "time": 57.72,
+      "emphasis": 0.6,
+      "focus": [
+        3
+      ],
+      "gesture": "halt"
+    },
+    {
+      "time": 62.33,
+      "emphasis": 0.6,
+      "focus": [
+        5
+      ],
+      "gesture": "fall",
+      "direction": "down"
+    },
+    {
+      "time": 66.23,
+      "emphasis": 0.6,
+      "focus": [
+        3
+      ]
+    },
+    {
+      "time": 70.38,
+      "emphasis": 0.5,
+      "focus": [
+        6
+      ]
+    },
+    {
+      "time": 75.35,
+      "emphasis": 0.55,
+      "focus": [
+        6,
+        7
+      ]
+    },
+    {
+      "time": 79.79,
+      "emphasis": 0.6
+    },
+    {
+      "time": 83.74,
+      "emphasis": 0.6
+    },
+    {
+      "time": 88.79,
+      "emphasis": 0.6,
+      "focus": [
+        4
+      ]
+    },
+    {
+      "time": 91.87,
+      "emphasis": 0.65,
+      "focus": [
+        1
+      ]
+    },
+    {
+      "time": 93.88,
+      "emphasis": 0.8,
+      "focus": [
+        4
+      ],
+      "gesture": "rush"
+    },
+    {
+      "time": 97.88,
+      "emphasis": 0.75
+    },
+    {
+      "time": 102.2,
+      "emphasis": 0.75
+    },
+    {
+      "time": 106.73,
+      "emphasis": 0.7,
+      "focus": [
+        3
+      ],
+      "gesture": "apart"
+    },
+    {
+      "time": 110.27,
+      "emphasis": 0.4,
+      "focus": [
+        1
+      ]
+    },
+    {
+      "time": 115.66,
+      "emphasis": 0.5,
+      "focus": [
+        5
+      ]
+    },
+    {
+      "time": 117.26,
+      "emphasis": 0.55,
+      "focus": [
+        4
+      ],
+      "gesture": "swell"
+    },
+    {
+      "time": 118.71,
+      "emphasis": 0.55,
+      "focus": [
+        4
+      ]
+    },
+    {
+      "time": 120.24,
+      "emphasis": 0.55,
+      "focus": [
+        3
+      ]
+    },
+    {
+      "time": 124.12,
+      "emphasis": 0.55,
+      "focus": [
+        0
+      ],
+      "gesture": "rise",
+      "direction": "up"
+    },
+    {
+      "time": 125.27,
+      "emphasis": 0.7,
+      "focus": [
+        9
+      ],
+      "gesture": "strike"
+    },
+    {
+      "time": 130.62,
+      "emphasis": 0.55,
+      "focus": [
+        3
+      ]
+    },
+    {
+      "time": 132.16,
+      "emphasis": 0.55,
+      "focus": [
+        9
+      ]
+    },
+    {
+      "time": 134.78,
+      "emphasis": 0.5,
+      "focus": [
+        2
+      ],
+      "gesture": "hang"
+    },
+    {
+      "time": 138.13,
+      "emphasis": 0.65,
+      "focus": [
+        3,
+        6
+      ]
+    },
+    {
+      "time": 143.7,
+      "emphasis": 0.5,
+      "focus": [
+        1
+      ],
+      "gesture": "echo"
+    },
+    {
+      "time": 145.66,
+      "emphasis": 0.6
+    },
+    {
+      "time": 149.66,
+      "emphasis": 0.6
+    },
+    {
+      "time": 153.72,
+      "emphasis": 0.6
+    },
+    {
+      "time": 157.68,
+      "emphasis": 0.65
+    },
+    {
+      "time": 160.27,
+      "emphasis": 0.8
+    },
+    {
+      "time": 164.19,
+      "emphasis": 0.75
+    },
+    {
+      "time": 169.11,
+      "emphasis": 0.75
+    },
+    {
+      "time": 173.2,
+      "emphasis": 0.7
+    },
+    {
+      "time": 177.22,
+      "emphasis": 0.8
+    },
+    {
+      "time": 181.19,
+      "emphasis": 0.8
+    },
+    {
+      "time": 185.66,
+      "emphasis": 0.85
+    },
+    {
+      "time": 193.22,
+      "emphasis": 0.7
+    },
+    {
+      "time": 199.23,
+      "emphasis": 0.7
+    },
+    {
+      "time": 201.25,
+      "emphasis": 0.75
+    }
+  ]
+}
