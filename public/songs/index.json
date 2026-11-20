@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "songs": [
+    {
+      "slug": "kendrick-lamar-xxx-feat-u2",
+      "base": "/songs/kendrick-lamar-xxx-feat-u2/",
+      "title": "XXX. FEAT. U2.",
+      "artist": "Kendrick Lamar",
+      "album": "DAMN.",
+      "duration": 254.3,
+      "audio": "audio.mp3",
+      "semantics": "agent",
+      "colors": [
+        "#d9a441",
+        "#e0763a",
+        "#e03535",
+        "#b8872f",
+        "#4a7ab5",
+        "#ff3b2f",
+        "#8a8f9c",
+        "#5a6b8f",
+        "#8fc1ff",
+        "#8f3e4e",
+        "#8fc1ff"
+      ]
+    }
+  ]
+}

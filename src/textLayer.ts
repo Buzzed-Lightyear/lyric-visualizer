@@ -36,6 +36,11 @@ export interface TextLine {
   text: string
   start: number
   end: number
+  /**
+   * Real word onsets (seconds, one per word) when the song has word-synced
+   * lyrics; null/short falls back to the estimate.
+   */
+  onsets?: number[] | null
 }
 
 export interface PartOverrides {
@@ -310,7 +315,10 @@ export class TextLayer {
     const { w, h } = this.view
     const measure = makeMeasure(this.ctx, voiceName)
     const style = typeStyleFor(this.ctx, voiceName)
-    const onsets = estimateWordOnsets(texts, line.start, line.end - line.start)
+    const onsets =
+      line.onsets && line.onsets.length === texts.length
+        ? line.onsets
+        : estimateWordOnsets(texts, line.start, line.end - line.start)
     let layout = o.layout ?? params.layout
     if (layout === 'focus' && !focusFeasible(onsets, line.end)) layout = 'centered'
     const { slots } = LAYOUTS[layout]({

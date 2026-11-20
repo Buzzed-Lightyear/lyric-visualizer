@@ -22,17 +22,31 @@ function presetFeedbackEndpoint(): Plugin {
         req.on('data', (chunk) => (body += chunk))
         req.on('end', () => {
           try {
-            const parsed = JSON.parse(body) as { chosen?: unknown; banned?: unknown }
+            const parsed = JSON.parse(body) as {
+              version?: unknown
+              songs?: unknown
+              banned?: unknown
+            }
+            const songsOk =
+              typeof parsed.songs === 'object' &&
+              parsed.songs !== null &&
+              !Array.isArray(parsed.songs) &&
+              Object.values(parsed.songs).every(
+                (chosen) =>
+                  typeof chosen === 'object' &&
+                  chosen !== null &&
+                  !Array.isArray(chosen) &&
+                  Object.values(chosen).every((name) => typeof name === 'string'),
+              )
             if (
-              typeof parsed.chosen !== 'object' ||
-              parsed.chosen === null ||
-              Array.isArray(parsed.chosen) ||
+              parsed.version !== 2 ||
+              !songsOk ||
               !Array.isArray(parsed.banned) ||
               parsed.banned.some((b) => typeof b !== 'string')
             ) {
               throw new Error('bad shape')
             }
-            const clean = { chosen: parsed.chosen, banned: parsed.banned }
+            const clean = { version: 2, songs: parsed.songs, banned: parsed.banned }
             fs.writeFileSync(
               path.resolve('src/presetFeedback.json'),
               JSON.stringify(clean, null, 2) + '\n',
@@ -41,7 +55,7 @@ function presetFeedbackEndpoint(): Plugin {
             res.end('ok')
           } catch {
             res.statusCode = 400
-            res.end('expected { chosen: {}, banned: [] }')
+            res.end('expected { version: 2, songs: { <slug>: { <label>: <preset> } }, banned: [] }')
           }
         })
       })

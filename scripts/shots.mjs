@@ -7,6 +7,11 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import { chromium } from 'playwright'
+import { makeFixture } from './makeFixture.mjs'
+
+// The made-up fixture songs: the harness falls back to them with an empty
+// library, and the app smoke test runs the picker and transport on them.
+makeFixture()
 
 const PORT = 5178
 const BASE = `http://localhost:${PORT}`
@@ -97,25 +102,58 @@ try {
     }
     if (failed.length > 0) exitCode = 1
 
-    // Smoke test the real app: loads, draws its idle scene, takes the
-    // L/D/S keys, and logs no errors. (Playback itself needs a human.)
+    // Smoke test the real app on the fixture songs: the picker lists them,
+    // the transport plays/scrubs, the help sheet opens, song switching
+    // fully resets, and nothing logs an error. (?fixture=1 appends the
+    // generated fixture songs to whatever library is present.)
     const app = await browser.newPage({ viewport: { width: 1280, height: 720 } })
     const appErrors = []
+    const appFailures = []
     app.on('pageerror', (error) => appErrors.push(String(error)))
     app.on('console', (msg) => {
       if (msg.type() === 'error') appErrors.push(msg.text())
     })
-    await app.goto(BASE)
+    const expect = (pass, what) => {
+      if (!pass) appFailures.push(what)
+    }
+    await app.goto(`${BASE}/?fixture=1`)
+
+    // Start screen: the fixture songs are listed with their metadata.
+    await app.waitForSelector('[data-song="fixture-a"]', { timeout: 10000 })
+    expect((await app.textContent('[data-song="fixture-a"]')).includes('Paper Planets'), 'picker shows the fixture title')
+    expect((await app.textContent('[data-song="fixture-b"]')).includes('neutral fallback'), 'picker shows the semantics source')
+
+    // Open a song; the transport appears and playback starts on click.
+    await app.click('[data-song="fixture-a"]')
+    await app.waitForSelector('[data-testid="transport"]', { timeout: 10000 })
+    expect(new URL(app.url()).searchParams.get('song') === 'fixture-a', '?song= follows the pick')
+    await app.click('[data-action="play"]')
     await app.waitForTimeout(1500)
-    // Cycle to the canvas-scene background so there is something to sample
-    // (butterchurn needs a play gesture), then exercise every key once.
-    // No [ ] or N here: those save feedback through the dev endpoint and
-    // a verify run must not mutate src/presetFeedback.json.
+    const t1 = await app.evaluate(() => window.__app.audio.currentTime)
+    expect(t1 > 0.4, `playback advances (got ${t1.toFixed(2)}s)`)
+
+    // Scrub: a click near the end of the bar seeks there.
+    const bar = await app.locator('.scrub').boundingBox()
+    await app.mouse.click(bar.x + bar.width * 0.8, bar.y + bar.height / 2)
+    const t2 = await app.evaluate(() => window.__app.audio.currentTime)
+    expect(t2 > 15, `scrubbing seeks (got ${t2.toFixed(2)}s of 24s)`)
+    expect((await app.locator('.scrub-section').count()) === 3, 'scrub bar carries one marker per section')
+
+    // Help sheet on ? and away on Escape.
+    await app.keyboard.press('?')
+    expect(await app.isVisible('[data-testid="help"]'), 'help sheet opens on ?')
+    await app.keyboard.press('Escape')
+    expect(!(await app.isVisible('[data-testid="help"]')), 'help sheet closes on Escape')
+
+    // Cycle to the canvas-scene background so there is something to sample,
+    // then exercise every key once. No [ ] or N here: those save feedback
+    // through the dev endpoint and a verify run must not mutate
+    // src/presetFeedback.json.
     await app.keyboard.press('b')
     for (const key of ['l', 'd', 's', 'k', 't', '{', '}', 'e', 'h', 'x', 'f', 'y', '1', '0', 'l', 'd', 's', 'k', 't'])
       await app.keyboard.press(key)
     await app.waitForTimeout(500)
-    const appOk = await app.evaluate(() => {
+    const sceneOk = await app.evaluate(() => {
       const canvas = document.querySelector('canvas.scene')
       if (!canvas) return 'no scene canvas'
       const ctx = canvas.getContext('2d')
@@ -129,8 +167,27 @@ try {
       }
       return max - min > 10 ? 'ok' : `canvas near-uniform (spread ${max - min})`
     })
-    const appPass = appOk === 'ok' && appErrors.length === 0
-    console.log(`${appPass ? 'ok  ' : 'FAIL'}  app smoke test  [${appOk}${appErrors.length ? '; errors: ' + appErrors.join(' | ') : ''}]`)
+    expect(sceneOk === 'ok', `scene canvas moves (${sceneOk})`)
+
+    // Back to the picker, then switch songs: playback and title fully reset.
+    await app.click('[data-action="back"]')
+    await app.waitForSelector('[data-song="fixture-b"]', { timeout: 10000 })
+    await app.click('[data-song="fixture-b"]')
+    await app.waitForSelector('[data-testid="transport"]', { timeout: 10000 })
+    await app.waitForTimeout(400)
+    const after = await app.evaluate(() => ({
+      time: window.__app.audio.currentTime,
+      src: window.__app.audio.src,
+      paused: window.__app.audio.paused,
+    }))
+    expect(after.src.includes('/fixture/fixture-b/'), 'switching swaps the audio source')
+    expect(after.time < 2 && after.paused, `switching resets playback (t=${after.time.toFixed(2)}, paused=${after.paused})`)
+    expect((await app.textContent('.now-title')).includes('Static Garden'), 'switching swaps the title')
+    expect((await app.locator('.scrub-section').count()) === 2, 'switching swaps the section markers')
+
+    const appPass = appFailures.length === 0 && appErrors.length === 0
+    const detail = [...appFailures, ...(appErrors.length ? ['errors: ' + appErrors.join(' | ')] : [])]
+    console.log(`${appPass ? 'ok  ' : 'FAIL'}  app smoke test  [${appPass ? 'picker + transport + switch' : detail.join('; ')}]`)
     if (!appPass) exitCode = 1
   }
 } catch (error) {

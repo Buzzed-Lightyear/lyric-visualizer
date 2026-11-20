@@ -46,6 +46,43 @@ export interface Feedback {
   banned: string[]
 }
 
+/**
+ * src/presetFeedback.json: preset choices are per song (keyed by slug);
+ * bans are global.
+ */
+export interface FeedbackFile {
+  version: 2
+  songs: Record<string, Record<string, string>>
+  banned: string[]
+}
+
+/** Tolerant load; a v1 file ({ chosen, banned }) keeps only its bans. */
+export function parseFeedbackFile(input: unknown): FeedbackFile {
+  const file: FeedbackFile = { version: 2, songs: {}, banned: [] }
+  if (typeof input !== 'object' || input === null) return file
+  const raw = input as Record<string, unknown>
+  if (Array.isArray(raw.banned)) {
+    file.banned = raw.banned.filter((b): b is string => typeof b === 'string')
+  }
+  if (raw.version === 2 && typeof raw.songs === 'object' && raw.songs !== null) {
+    for (const [slug, chosen] of Object.entries(raw.songs as Record<string, unknown>)) {
+      if (typeof chosen !== 'object' || chosen === null) continue
+      const clean: Record<string, string> = {}
+      for (const [label, name] of Object.entries(chosen as Record<string, unknown>)) {
+        if (typeof name === 'string') clean[label] = name
+      }
+      file.songs[slug] = clean
+    }
+  }
+  return file
+}
+
+/** The per-song view the picker works on. Mutations write through. */
+export function feedbackFor(file: FeedbackFile, slug: string): Feedback {
+  file.songs[slug] ??= {}
+  return { chosen: file.songs[slug], banned: file.banned }
+}
+
 /** Flags that disqualify a preset outright. */
 const FATAL_FLAGS = new Set(['error', 'blank', 'strobe'])
 

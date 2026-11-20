@@ -18,7 +18,8 @@ import { LAYOUT_NAMES, LAYOUTS, type LayoutName } from './layout'
 import { chooseMotif, NEUTRAL_PARAMS, paramsForSection, type SceneParams, type TextParams } from './mapping'
 import { ENTRANCE_NAMES, EXIT_NAMES, HOLD_NAMES } from './parts'
 import { loadAllPresets } from './presetPacks'
-import { CATALOG, pickForSections } from './presetPick'
+import { parseIndex } from './library'
+import { CATALOG, feedbackFor, parseFeedbackFile, pickForSections } from './presetPick'
 import { createRandom } from './random'
 import { Scene } from './scene'
 import {
@@ -929,8 +930,27 @@ function runChecks(
 
 // --- entry point -------------------------------------------------------------
 
+/**
+ * The semantics the harness renders: the first library song's, or the
+ * generated fixture's when the library is empty (so the checks run on any
+ * machine, with zero, one or many songs present).
+ */
+async function harnessSong(): Promise<{ slug: string; base: string }> {
+  try {
+    const response = await fetch('/songs/index.json')
+    if (response.ok) {
+      const entries = parseIndex((await response.json()) as unknown)
+      if (entries[0]) return { slug: entries[0].slug, base: entries[0].base }
+    }
+  } catch {
+    // fall through to the fixture
+  }
+  return { slug: 'fixture-a', base: '/fixture/fixture-a/' }
+}
+
 async function run(): Promise<Report> {
-  const response = await fetch('/song/song.semantics.json')
+  const { slug, base } = await harnessSong()
+  const response = await fetch(base + 'semantics.json')
   const { semantics, errors } = parseSemantics(await response.json())
   if (!semantics) {
     return {
@@ -1078,11 +1098,8 @@ async function run(): Promise<Report> {
   checks.push(await butterchurnSmoke())
 
   // The chosen background preset per section of the song.
-  const feedback = (await import('./presetFeedback.json')).default as {
-    chosen: Record<string, string>
-    banned: string[]
-  }
-  const picks = pickForSections(semantics.sections, feedback)
+  const feedbackFile = parseFeedbackFile((await import('./presetFeedback.json')).default)
+  const picks = pickForSections(semantics.sections, feedbackFor(feedbackFile, slug))
   const pickLines: string[] = []
   for (const pick of picks.values()) {
     if (!pick.chosen) {

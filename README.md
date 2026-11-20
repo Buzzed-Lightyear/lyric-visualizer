@@ -18,9 +18,15 @@ npm run verify   # lint + build + unit tests + visual checks
 
 `npm run shots` drives the real scene headlessly (Playwright) through a
 dev-only harness (`/harness.html`): it steps the scene with a fixed
-1/60 s clock and a scripted audio track built from the committed
-semantics file (level follows section energy, steady 120 BPM beat), so
-no audio file is needed. It writes `shots/contact-sheet.png` (one
+1/60 s clock and a scripted audio track built from the first library
+song's semantics (level follows section energy, steady 120 BPM beat), so
+no audio file is needed. It first generates two made-up fixture songs
+under `public/fixture/` (generated tone, invented lyrics, hand-written
+semantics; gitignored) — with an empty library the harness renders
+those, so verify passes with zero, one or many songs present. The app
+smoke test runs on the fixtures (`?fixture=1` lists them in the picker):
+it picks a song, plays, scrubs, opens the help sheet, presses every key,
+goes back and switches songs, checking playback fully resets. It writes `shots/contact-sheet.png` (one
 labeled tile per section plus an 8-frame filmstrip across every section
 boundary) and `shots/report.json`, and fails on the checks defined in
 `src/thresholds.ts`: blank tiles, differently labeled sections that look
@@ -31,18 +37,77 @@ scene is deterministic (seeded randomness, no clock or window reads), so
 repeats of a section render identically. Look at the contact sheet after
 changing visuals; the checks catch regressions, not taste.
 
-## Song files
+## The song library
 
-Steps 1-3 hardcode one song. Put your own files here:
+One folder per song under `public/songs/<slug>/`:
 
-- `public/song/song.mp3`: the audio
-- `public/song/song.lrc`: line-timed lyrics for that exact recording
-- `public/song/song.semantics.json`: hand-written semantics (committed;
-  it contains no lyric text — the audio and .lrc stay gitignored)
+- `audio.mp3` (or `.wav`, ...): the audio — gitignored
+- `lyrics.lrc`: line-timed lyrics for that exact recording — gitignored
+- `semantics.json`: the semantics (committed; no lyric text, words go by
+  index)
+- `meta.json`: title, artist, album, duration, audio file name, and
+  where the semantics came from (`api` / `agent` / `neutral`) — committed
+- `words.json`: real word onsets from LRCLIB's word-synced lyrics, when
+  the track has them — times only, so it is committed too
 
-To use different file names, change the constants in `src/App.tsx`.
+`public/songs/index.json` is generated from those folders (`npm run
+index-songs`; add-song does it automatically) and is what the app loads
+at startup. The start screen lists every song — title, artist, duration,
+semantics source, and a strip of its section palette — and remembers the
+last song played; `?song=<slug>` deep-links one. Preset choices in
+`src/presetFeedback.json` are per song; bans are global.
+
+## Adding a song
+
+```sh
+npm run add-song -- path/to/song.mp3
+```
+
+Reads title/artist/album/duration from the file's tags (override with
+`--title`, `--artist`, `--album`, `--duration`, `--slug`), copies the
+audio in, fetches synced lyrics from LRCLIB (exact `/api/get` first,
+then `/api/search` accepting a duration within 2 s), saves per-word
+timing when LRCLIB has it (the newer `lyricsfile` field), generates the
+semantics, and rebuilds the index.
+
+Rerunning on an existing song refuses to touch anything unless asked:
+
+```sh
+npm run add-song -- --song <slug> --lyrics            # refetch LRCLIB
+npm run add-song -- --song <slug> --lyrics my.lrc     # use a local file
+npm run add-song -- --song <slug> --semantics         # regenerate
+npm run add-song -- --song <slug> --semantics --side  # to semantics.api.json + diff
+```
+
+`--side` writes next to the real file (gitignored), leaves
+`semantics.json` untouched, and prints a diff: section boundaries side
+by side, focus-word overlap, gesture agreement.
+
+### Semantics from the API
+
+`scripts/generateSemantics.ts` (Anthropic TypeScript SDK) asks the model
+for the version 2 semantics file using schema-constrained output
+(structured outputs + a Zod schema in `src/semanticsGen.ts`, where the
+prompt also lives). The key comes from `ANTHROPIC_API_KEY` in `.env`
+(gitignored; the SDK code is never imported by anything in the browser
+bundle). `SEMANTICS_MODEL` overrides the default model
+(`claude-opus-5-5`). Output is validated with the same parser the app
+uses and retried up to twice with the errors quoted back; the final
+document must pass the automatic checks in `src/semanticsChecks.ts`
+(sections cover the song, focus indices in range, gesture share between
+15% and 40%, same-label sections identical, refrain gestures
+consistent) or nothing is written.
+
+Without a key, add-song writes a **neutral fallback** instead — sections
+from the gaps in the LRC, neutral mood, no authored gestures (the
+lexicon still fires at runtime) — and says so.
 
 ## Keys
+
+Press `?` in the player for this list. Space plays/pauses, `←`/`→` seek
+5 s, and the on-screen transport has play/pause, a scrub bar with the
+sections marked in their palette colors, back and fullscreen. Controls
+fade out after a few idle seconds and return on mouse move or key press.
 
 - `L`: show or hide the lyrics (physics text or the DOM line)
 - `T`: physics text vs the old single DOM lyric line
@@ -187,10 +252,10 @@ and lock), echo (pulses with expanding ghost rings), hang
 (hang/pendulum), linger (outstays its line's exit). Strengths live in
 `tuning.ts` GESTURE_T.
 
-**Word onsets are an estimate**: the LRC is line-timed, so words are
-spread across the first ~70% of each line's duration (capped), weighted
-by word length (src/onsets.ts). Real word timing would need alignment
-tooling, which is out of scope.
+**Word onsets** come from the song's `words.json` (real word timing from
+LRCLIB) when a line has it; otherwise they are estimated — words spread
+across the first ~70% of each line's duration (capped), weighted by word
+length (src/onsets.ts). Each line falls back independently.
 
 The harness renders a type specimen (every voice x every layout on the
 same made-up line, with a focus word) and measures word gaps, margins,
@@ -230,7 +295,8 @@ broken, blank and hard-strobing presets never play; same-label sections
 share one preset; neighbouring sections never share; same inputs give
 the same picks. Your [ ] / N feedback persists to
 `src/presetFeedback.json` through a dev-only Vite endpoint (reset
-button in the K panel).
+button in the K panel). Choices are stored per song (keyed by slug);
+bans apply everywhere.
 
 ## Semantics file format
 
@@ -301,7 +367,13 @@ parse.
   fast with an accent on an energy rise, as a slow dissolve on a fall.
   Audio decides when things move; semantics decide what and how much.
   This is the go/no-go test for the whole idea.
-- Next (provisional): step 4, LLM extraction of the same schema.
+- **Step 4, LLM extraction: built** (`npm run add-song -- --song <slug>
+  --semantics --side` regenerates to a side file and prints the diff
+  against the hand-written annotation).
+- **Songs pass: done.** A real library (one folder per song), add-song
+  with LRCLIB lyrics + word timing, a start screen, and a proper
+  transport replacing the native audio controls.
+- Next (provisional): step 5, persistence + presets and seeds.
 
 Analysis (`src/analysis.ts` for the Web Audio graph, `src/audioMath.ts`
 for the spectrum math on plain arrays), mapping (`src/mapping.ts`) and

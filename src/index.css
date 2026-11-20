@@ -1,13 +1,32 @@
-/* The scene is dark, so the page is too. Must match SCENE.backgroundRgb. */
+/* The chrome stays near-monochrome on the canvas color: every accent on
+   screen comes from a song's own section palettes (library strips, scrub
+   markers), never from a theme. */
 :root {
   color-scheme: dark;
-  font: 16px/1.5 system-ui, sans-serif;
+  --bg: #080a12; /* must match SCENE.backgroundRgb */
+  --ink: #dde6f5;
+  --dim: rgba(221, 230, 245, 0.56);
+  --faint: rgba(221, 230, 245, 0.34);
+  --hairline: rgba(160, 180, 220, 0.16);
+  --raise: rgba(16, 20, 33, 0.92);
+  --focus: #8fb4d8;
+  font: 15px/1.5 'Inter', system-ui, sans-serif;
 }
 
 body {
   margin: 0;
-  background: #080a12;
-  color: #dde6f5;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 canvas.bg,
@@ -23,22 +42,323 @@ canvas.text {
   z-index: 1;
 }
 
-main {
+/* --- start screen ---------------------------------------------------------- */
+
+.start {
   position: relative;
   z-index: 2;
-  max-width: 40rem;
+  max-width: 44rem;
   margin: 0 auto;
-  padding: 2rem 1rem;
+  padding: 14vh 1.5rem 3rem;
 }
 
-audio {
+.wordmark {
+  margin: 0;
+  font-family: 'Archivo Black', system-ui, sans-serif;
+  font-size: clamp(1.9rem, 5vw, 2.6rem);
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+}
+
+.tagline {
+  margin: 0.6rem 0 0;
+  color: var(--dim);
+  max-width: 34rem;
+}
+
+.songs {
+  list-style: none;
+  margin: 3.2rem 0 0;
+  padding: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.song-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.4rem 1.5rem;
   width: 100%;
+  padding: 1.05rem 0.4rem 1.15rem;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  cursor: pointer;
+}
+
+.song-row:hover .song-title,
+.song-row:focus-visible .song-title {
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+  text-decoration-thickness: 1px;
+}
+
+.song-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.song-title {
+  font-weight: 600;
+  font-size: 1.1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.song-sub {
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.song-note {
+  color: var(--faint);
+  font-size: 0.82rem;
+}
+
+.song-duration {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.9rem;
+  color: var(--dim);
+}
+
+/* The song's section palette, one segment per section. */
+.song-strip {
+  grid-column: 1 / -1;
+  display: flex;
+  height: 3px;
+  border-radius: 1.5px;
+  overflow: hidden;
+  opacity: 0.85;
+}
+
+.song-strip i {
+  flex: 1;
+}
+
+.start-empty {
+  margin-top: 3.2rem;
+  padding: 1.6rem;
+  border: 1px solid var(--hairline);
+  border-radius: 0.5rem;
+  color: var(--dim);
+}
+
+.start-empty p {
+  margin: 0 0 0.6rem;
+}
+
+.start-empty pre {
+  margin: 0.9rem 0 0;
+  padding: 0.7rem 0.9rem;
+  background: rgba(221, 230, 245, 0.05);
+  border-radius: 0.35rem;
+  overflow-x: auto;
+}
+
+code {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.88em;
+}
+
+.start-foot {
+  margin-top: 2.4rem;
+  color: var(--faint);
+  font-size: 0.85rem;
+}
+
+/* --- player chrome ---------------------------------------------------------- */
+
+.player .topbar,
+.player .transport,
+.player .toast {
+  z-index: 3;
+}
+
+.topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.7rem 0.9rem;
+  background: linear-gradient(rgba(8, 10, 18, 0.72), rgba(8, 10, 18, 0));
+  transition: opacity 0.45s ease;
+}
+
+.now-playing {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7rem;
+  min-width: 0;
+  margin-right: auto;
+}
+
+.now-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.now-artist {
+  color: var(--dim);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.transport {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.9rem 1.1rem 1rem;
+  background: linear-gradient(rgba(8, 10, 18, 0), rgba(8, 10, 18, 0.78));
+  transition: opacity 0.45s ease;
+}
+
+.chrome-button {
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.chrome-button:hover {
+  background: rgba(221, 230, 245, 0.1);
+}
+
+.play-button {
+  width: 2.8rem;
+  height: 2.8rem;
+  border: 1px solid var(--hairline);
+}
+
+.help-button {
+  font-family: 'Space Mono', monospace;
+  color: var(--dim);
+}
+
+.time {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.82rem;
+  color: var(--dim);
+  min-width: 3.1em;
+  text-align: center;
+}
+
+/* The scrub bar: the sections' accent colors are the track. */
+.scrub {
+  position: relative;
+  flex: 1;
+  height: 1.4rem;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.scrub-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(221, 230, 245, 0.18);
+  transition: height 0.15s ease;
+}
+
+.scrub:hover .scrub-track,
+.scrub:focus-visible .scrub-track {
+  height: 8px;
+}
+
+.scrub-section {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+/* Dims the part not yet played, so the colors read as progress. */
+.scrub-dim {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  height: 10px;
+  transform: translateY(-50%);
+  background: rgba(8, 10, 18, 0.55);
+  pointer-events: none;
+}
+
+.scrub-head {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 14px;
+  transform: translate(-1px, -50%);
+  background: var(--ink);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+/* Idle fade during playback; pointer events fall through to the canvas. */
+.player-idle .topbar,
+.player-idle .transport {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.player-idle {
+  cursor: none;
+}
+
+/* --- notices, lyric fallback, toast ----------------------------------------- */
+
+.notices {
+  position: fixed;
+  top: 3.6rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  width: min(34rem, calc(100vw - 2rem));
+}
+
+.notices p {
+  margin: 0 0 0.6rem;
+  padding: 0.7rem 1rem;
+  background: var(--raise);
+  border: 1px solid var(--hairline);
+  border-radius: 0.4rem;
+  font-size: 0.9rem;
 }
 
 /* Reserves its line so the layout doesn't shift during instrumental gaps. */
 .lyric-line {
+  position: fixed;
+  left: 50%;
+  top: 20%;
+  transform: translateX(-50%);
+  width: min(40rem, calc(100vw - 2rem));
+  z-index: 2;
   min-height: 2.25rem;
-  margin-top: 2rem;
+  margin: 0;
   font-size: 1.5rem;
   text-align: center;
   text-wrap: balance;
@@ -48,22 +368,83 @@ audio {
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 3rem;
+  bottom: 4.6rem;
   transform: translateX(-50%);
   margin: 0;
   padding: 0.4rem 0.9rem;
-  background: rgba(10, 12, 20, 0.85);
-  border: 1px solid rgba(160, 180, 220, 0.3);
+  background: var(--raise);
+  border: 1px solid var(--hairline);
   border-radius: 0.4rem;
   font-size: 0.85rem;
-  z-index: 3;
+  z-index: 4;
 }
 
-.hint {
+/* --- help sheet -------------------------------------------------------------- */
+
+.help {
   position: fixed;
-  right: 0.75rem;
-  bottom: 0.5rem;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  background: rgba(4, 5, 10, 0.6);
+}
+
+.help-card {
+  width: min(42rem, calc(100vw - 2rem));
+  max-height: min(80vh, 40rem);
+  overflow-y: auto;
+  padding: 1.6rem 1.8rem;
+  background: var(--raise);
+  border: 1px solid var(--hairline);
+  border-radius: 0.6rem;
+}
+
+.help-card h2 {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+}
+
+.help-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1.2rem 2rem;
+}
+
+.help-group h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--dim);
+}
+
+.help-group dl {
   margin: 0;
-  font-size: 0.75rem;
-  color: rgba(221, 230, 245, 0.45);
+}
+
+.help-row {
+  display: flex;
+  gap: 0.9rem;
+  padding: 0.22rem 0;
+}
+
+.help-row dt {
+  flex: 0 0 4.2rem;
+  font-family: 'Space Mono', monospace;
+  font-size: 0.82rem;
+  color: var(--ink);
+}
+
+.help-row dd {
+  margin: 0;
+  color: var(--dim);
+  font-size: 0.9rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topbar,
+  .transport,
+  .scrub-track {
+    transition: none;
+  }
 }

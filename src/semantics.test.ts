@@ -9,17 +9,42 @@ import {
   validateFocusRanges,
 } from './semantics'
 
-const fixture = () =>
-  JSON.parse(
-    fs.readFileSync(new URL('../public/song/song.semantics.json', import.meta.url), 'utf8'),
-  ) as unknown
+// A made-up document with the shape the structural tests below need.
+const fixture = (): unknown => ({
+  version: 2,
+  sections: [0, 8, 16, 24].map((start, i) => ({
+    start,
+    end: start + 8,
+    label: `part ${i + 1}`,
+    energy: 0.5,
+    mood: 'calm',
+    palette: ['#000000', '#111111', '#222222'],
+    imagery: [],
+  })),
+  lines: [
+    { time: 1.5, emphasis: 0.8, focus: [0] },
+    { time: 9, emphasis: 0.4 },
+  ],
+})
 
 describe('parseSemantics', () => {
-  it('accepts the committed fixture', () => {
+  it('accepts the made-up fixture', () => {
     const { semantics, errors } = parseSemantics(fixture())
     expect(errors).toEqual([])
     expect(semantics).not.toBeNull()
     expect(semantics!.sections.length).toBeGreaterThan(3)
+  })
+
+  it('accepts every committed semantics file in the library', () => {
+    const songsDir = new URL('../public/songs', import.meta.url)
+    if (!fs.existsSync(songsDir)) return
+    for (const name of fs.readdirSync(songsDir)) {
+      const file = new URL(`../public/songs/${name}/semantics.json`, import.meta.url)
+      if (!fs.existsSync(file)) continue
+      const { semantics, errors } = parseSemantics(JSON.parse(fs.readFileSync(file, 'utf8')))
+      expect(errors, `${name}/semantics.json`).toEqual([])
+      expect(semantics).not.toBeNull()
+    }
   })
 
   it('rejects a non-object root readably', () => {
